@@ -6,7 +6,7 @@ class DatabaseManager:
     def __init__(self):
         # ⚠️ THE BUG: This pool size is too small for high-traffic events!
         # Our AI Agent will suggest increasing this to 50.
-        self.pool_size = 20 
+        self.pool_size =  50 
         self.timeout_ms = 1000 
         self.active_connections = 0
         logging.info(f"Database initialized with pool_size={self.pool_size}")
