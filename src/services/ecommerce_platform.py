@@ -107,10 +107,10 @@ class DatabaseAccessLayer:
             
         new_stock = product.stock + quantity_change
         
-        # ⚠️ HIDDEN BUG #1: ValueError for negative stock
-        # The AI Agent will need to rewrite this logic to handle negative scenarios gracefully!
+        # Fixed BUG #1: Handle negative stock gracefully
         if new_stock < 0:
-            raise ValueError(f"CRITICAL: Negative stock achieved for {product.product_id}. Invalid state!")
+            logger.warning(f"Attempted to set negative stock for {product.product_id}. Setting to 0 instead.")
+            new_stock = 0
             
         product.stock = new_stock
         product.last_updated = time.time()
@@ -157,8 +157,13 @@ class PricingEngine:
     def calculate_final_price(self, base_price: float, quantity: int, state_code: str) -> float:
         """Compute the final total for an order line item."""
         
-        # ⚠️ HIDDEN BUG #2: TypeError if a string is accidentally passed as quantity
-        # The autonomous healer will need to add type validation/casting here!
+        # Fixed BUG #2: Add type validation/casting for quantity
+        try:
+            quantity = int(quantity)
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid quantity value: {quantity}. Using default of 1.")
+            quantity = 1
+            
         if quantity > 50:
             logger.info("Applying bulk wholesale discount.")
             base_price = base_price * (1.0 - self.discount_rate)
@@ -258,6 +263,13 @@ class FulfillmentManager:
                 pid = item.get("product_id")
                 qty = item.get("qty")
                 
+                # Ensure qty is an integer
+                try:
+                    qty = int(qty)
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid quantity value for {pid}: {qty}. Using default of 1.")
+                    qty = 1
+                
                 # Fetch product
                 product = self.db.get_product(pid)
                 if not product:
@@ -265,11 +277,9 @@ class FulfillmentManager:
                     continue
                     
                 # Deduct inventory count
-                # Note: this might trigger the negative stock ValueError!
                 self.db.update_stock(pid, -qty)
                 
                 # Calculate price
-                # Note: this might trigger the TypeError if qty is a string!
                 line_total = self.pricing.calculate_final_price(product.price, qty, state)
                 total_order_value += line_total
                 

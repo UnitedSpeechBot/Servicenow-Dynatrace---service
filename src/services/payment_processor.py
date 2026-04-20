@@ -23,6 +23,9 @@ class PaymentProcessor:
         self.gateway_healthy = True
         self.failure_count = 0
         self.threshold = 5
+        # Add SMTP configuration with fallback
+        self.smtp_hosts = ["smtp.corporate.internal:587", "smtp.backup.internal:587"]
+        self.current_smtp_index = 0
 
     def _call_external_gateway(self, payload: Dict) -> bool:
         """Simulates an API call to a third-party payment provider like Stripe."""
@@ -40,13 +43,20 @@ class PaymentProcessor:
 
     def _send_email_notification(self, user_email: str, status: str):
         """Simulates sending an order confirmation email."""
-        # This matches the SMTP error from your Dynatrace logs!
-        smtp_host = "smtp.internal:587"
+        # Get current SMTP host with fallback mechanism
+        smtp_host = self.smtp_hosts[self.current_smtp_index]
         try:
             logging.info(f"Sending {status} email to {user_email} via {smtp_host}...")
             # Simulation of connection refusal
             if "internal" in smtp_host:
-                raise ConnectionRefusedError(f"SMTP connection refused at {smtp_host}")
+                # Try to use the fallback SMTP server if available
+                if self.current_smtp_index < len(self.smtp_hosts) - 1:
+                    self.current_smtp_index += 1
+                    logging.warning(f"SMTP connection failed. Switching to fallback server: {self.smtp_hosts[self.current_smtp_index]}")
+                    self._send_email_notification(user_email, status)
+                    return
+                else:
+                    raise ConnectionRefusedError(f"SMTP connection refused at {smtp_host}")
         except Exception as e:
             err_msg = f"ERROR: Failed to send email to {user_email}. Reason: {e}"
             logging.error(err_msg)
@@ -70,8 +80,14 @@ class PaymentProcessor:
         # But we simulate the result for this file's standalone logic.
         logging.info("Checking database connection availability...")
 
-        # Step 2: Call Gateway
-        success = self._call_external_gateway(payload)
+        # Step 2: Call Gateway with retry mechanism
+        success = False
+        for attempt in range(self.max_retries):
+            if self._call_external_gateway(payload):
+                success = True
+                break
+            logging.warning(f"Gateway attempt {attempt+1} failed. Retrying...")
+            time.sleep(0.5)  # Add backoff delay
         
         if not success:
             self.failure_count += 1
@@ -106,7 +122,8 @@ class PaymentProcessor:
             "service": "payment-processor",
             "gateway_status": "UP" if self.gateway_healthy else "DOWN",
             "failure_rate": f"{self.failure_count / (self.threshold * 2) * 100}%",
-            "uptime": "99.99%"
+            "uptime": "99.99%",
+            "current_smtp": self.smtp_hosts[self.current_smtp_index]
         }
 
 # --- Standard App Loop ---
