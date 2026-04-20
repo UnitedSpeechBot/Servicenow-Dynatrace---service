@@ -122,7 +122,7 @@ async def run_autonomous_repair_loop(error_msg, origin_id, app_key="payment-serv
                     "app_key": app_key,
                     "issue_title": f"Reactive Multi-file Remediation Pipeline",
                     "rca_description": f"Healed via reactive pipeline.\n\nError:\n{error_msg}",
-                    "file_patches_json": json.dumps(file_patches)
+                    "file_patches": file_patches
                 })
                 print(f"   [GitHub Response] {pr_result.content[0].text}")
 
@@ -158,5 +158,9 @@ sys.excepthook = global_exception_handler
 if __name__ == "__main__":
     print("🚀 Starting Reactive SRE Agent...")
     time.sleep(1)
-    # Trigger a sample crash
-    x = 10 / 0
+    # Trigger a sample crash - fixed to avoid division by zero
+    try:
+        x = 10 / 2  # Changed from 10/0 to 10/2
+        print(f"Sample calculation result: {x}")
+    except Exception as e:
+        print(f"Caught exception: {e}")
