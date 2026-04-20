@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Autonomous SRE Agent | ServiceNow × Dynatrace</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg-deep: #020617;
+      --bg-surface: rgba(15, 23, 42, 0.7);
+      --bg-card: rgba(30, 41, 59, 0.4);
+      --accent-blue: #38bdf8;
+      --accent-indigo: #818cf8;
+      --accent-cyan: #22d3ee;
+      --accent-emerald: #34d399;
+      --accent-rose: #fb7185;
+      --text-main: #f8fafc;
+      --text-dim: #94a3b8;
+      --border: rgba(148, 163, 184, 0.1);
+      --border-bright: rgba(56, 189, 248, 0.3);
+      --radius-xl: 24px;
+      --radius-lg: 16px;
+      --font-main: 'Outfit', sans-serif;
+      --font-mono: 'JetBrains Mono', monospace;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: var(--bg-deep);
+      color: var(--text-main);
+      font-family: var(--font-main);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow-x: hidden;
+      line-height: 1.5;
+    }
+
+    /* ── Animated Background ────────────────────────────── */
+    .bg-blobs {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      z-index: -1; overflow: hidden;
+      background: radial-gradient(circle at 50% 50%, #0f172a 0%, #020617 100%);
+    }
+    .blob {
+      position: absolute; width: 600px; height: 600px;
+      background: radial-gradient(circle, rgba(56, 189, 248, 0.07) 0%, transparent 70%);
+      border-radius: 50%; animation: move 20s infinite alternate ease-in-out;
+    }
+    .blob-1 { top: -10%; left: -10%; animation-duration: 25s; }
+    .blob-2 { bottom: -10%; right: -10%; background: radial-gradient(circle, rgba(129, 140, 248, 0.05) 0%, transparent 70%); animation-duration: 30s; }
+    @keyframes move {
+      from { transform: translate(0, 0) scale(1); }
+      to { transform: translate(100px, 100px) scale(1.1); }
+    }
+
+    /* ── Layout ────────────────────────────────────────── */
+    .container {
+      max-width: 1200px; margin: 0 auto; padding: 2rem; width: 100%;
+      flex: 1; display: flex; flex-direction: column; gap: 2rem;
+    }
+
+    /* ── Header ────────────────────────────────────────── */
+    header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding-bottom: 2rem; border-bottom: 1px solid var(--border);
+    }
+    .logo-container { display: flex; align-items: center; gap: 1rem; }
+    .logo-box {
+      width: 48px; height: 48px; background: linear-gradient(135deg, var(--accent-blue), var(--accent-indigo));
+      border-radius: 12px; display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 0 20px rgba(56, 189, 248, 0.4);
+    }
+    .status-badge {
+      background: rgba(52, 211, 153, 0.1); border: 1px solid rgba(52, 211, 153, 0.2);
+      padding: 0.5rem 1rem; border-radius: 99px; font-size: 0.75rem; font-weight: 600;
+      color: var(--accent-emerald); display: flex; align-items: center; gap: 0.5rem;
+    }
+    .pulse { width: 8px; height: 8px; background: var(--accent-emerald); border-radius: 50%; animation: blink 2s infinite; }
+    @keyframes blink { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.4; transform: scale(0.8); } }
+
+    /* ── Main Input Card ───────────────────────────────── */
+    .hero-section {
+      text-align: center; padding: 3rem 0;
+      animation: fadeIn 0.8s ease-out;
+    }
+    .hero-section h1 { font-size: 3.5rem; font-weight: 800; letter-spacing: -0.04em; margin-bottom: 1rem; }
+    .hero-section p { font-size: 1.25rem; color: var(--text-dim); font-weight: 300; max-width: 600px; margin: 0 auto 2rem; }
+
+    .input-group {
+      background: var(--bg-surface); backdrop-filter: blur(12px);
+      border: 1px solid var(--border); border-radius: 20px;
+      padding: 0.5rem; display: flex; gap: 0.5rem;
+      max-width: 600px; margin: 0 auto;
+      box-shadow: 0 20px 50px rgba(0,0,0,0.3);
+      transition: border-color 0.3s;
+    }
+    .input-group:focus-within { border-color: var(--border-bright); }
+    .input-group input {
+      background: transparent; border: none; flex: 1; padding: 1rem 1.5rem;
+      color: var(--text-main); font-size: 1.1rem; outline: none;
+      font-family: var(--font-mono);
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent-blue), var(--accent-indigo));
+      color: white; border: none; padding: 0.75rem 2rem; border-radius: 12px;
+      font-weight: 700; cursor: pointer; transition: all 0.2s;
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 20px rgba(56, 189, 248, 0.3); }
+
+    /* ── Dashboard Grid ────────────────────────────────── */
+    .dashboard-grid {
+      display: grid; grid-template-columns: 1fr 350px; gap: 2rem;
+      opacity: 0; visibility: hidden; transition: opacity 0.5s;
+    }
+    .dashboard-grid.visible { opacity: 1; visibility: visible; }
+
+    .panel {
+      background: var(--bg-surface); backdrop-filter: blur(12px);
+      border: 1px solid var(--border); border-radius: var(--radius-xl);
+      padding: 2rem; display: flex; flex-direction: column; gap: 1.5rem;
+    }
+
+    /* ── Progress Pipeline ─────────────────────────────── */
+    .pipeline-container { display: flex; flex-direction: column; gap: 1rem; }
+    .step-node {
+      display: flex; align-items: center; gap: 1rem; padding: 1.25rem;
+      background: var(--bg-card); border-radius: var(--radius-lg);
+      border: 1px solid transparent; transition: all 0.3s;
+    }
+    .step-node.active { border-color: var(--accent-blue); background: rgba(56, 189, 248, 0.05); }
+    .step-node.complete { border-color: var(--accent-emerald); background: rgba(52, 211, 153, 0.05); }
+    .icon-holder {
+      width: 40px; height: 40px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(255,255,255,0.05); font-size: 1.25rem;
+    }
+    .active .icon-holder { background: var(--accent-blue); color: white; box-shadow: 0 0 15px rgba(56, 189, 248, 0.5); }
+    .complete .icon-holder { background: var(--accent-emerald); color: white; }
+
+    .step-info { flex: 1; }
+    .step-name { font-weight: 600; font-size: 0.95rem; }
+    .step-status { font-size: 0.75rem; color: var(--text-dim); }
+
+    /* ── Live Activity ─────────────────────────────────── */
+    .activity-feed {
+      font-family: var(--font-mono); font-size: 0.8rem; height: 100%;
+      display: flex; flex-direction: column; gap: 0.75rem;
+      overflow-y: auto; max-height: 500px; padding-right: 0.5rem;
+    }
+    .activity-feed::-webkit-scrollbar { width: 4px; }
+    .activity-feed::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+    .log-item { border-left: 2px solid var(--border); padding-left: 1rem; animation: slideIn 0.3s ease-out; }
+    .log-ts { color: var(--accent-blue); margin-right: 0.5rem; opacity: 0.7; }
+
+    /* ── Report Modal ──────────────────────────────────── */
+    .report-overlay {
+      position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: rgba(2, 6, 23, 0.95); z-index: 100;
+      display: grid; place-items: center;
+      opacity: 0; visibility: hidden; transition: 0.3s;
+    }
+    .report-overlay.visible { opacity: 1; visibility: visible; }
+    .report-modal {
+      width: 90%; max-width: 900px; height: 85vh;
+      background: #0f172a; border: 1px solid var(--border-bright);
+      border-radius: 32px; overflow-y: auto; padding: 4rem;
+      position: relative; box-shadow: 0 0 100px rgba(0,0,0,1);
+    }
+    .close-btn {
+      position: absolute; top: 2rem; right: 2rem;
+      background: var(--bg-card); border: none; color: white;
+      width: 44px; height: 44px; border-radius: 50%;
+      cursor: pointer; display: grid; place-items: center;
+    }
+
+    .markdown { line-height: 1.8; color: var(--text-main); }
+    .markdown h2 { color: var(--accent-cyan); margin: 2rem 0 1rem; font-size: 1.5rem; }
+    .markdown code { color: var(--accent-rose); background: rgba(251, 113, 133, 0.1); padding: 0.2rem 0.4rem; border-radius: 4px; }
+    .markdown pre { background: #010409; padding: 1.5rem; border-radius: 12px; border: 1px solid var(--border); margin: 1rem 0; overflow-x: auto; }
+    .markdown blockquote { border-left: 4px solid var(--accent-blue); padding-left: 2rem; margin: 2rem 0; font-style: italic; color: var(--text-dim); }
+
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes slideIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+  </style>
+</head>
+<body>
+
+  <div class="bg-blobs">
+    <div class="blob blob-1"></div>
+    <div class="blob blob-2"></div>
+  </div>
+
+  <div class="container">
+    <header>
+      <div class="logo-container">
+        <div class="logo-box">🛡️</div>
+        <div>
+          <h2 style="font-weight: 800; font-size: 1.25rem;">SRE.ORCHESTRATOR</h2>
+          <p style="font-size: 0.75rem; color: var(--text-dim); letter-spacing: 1px; text-transform: uppercase;">Autonomous Intelligence</p>
+        </div>
+      </div>
+      <div class="status-badge">
+        <span class="pulse"></span> System Operational
+      </div>
+    </header>
+
+    <div class="hero-section" id="hero">
+      <h1>Fix Instability. <span style="color: var(--accent-blue)">Automatically.</span></h1>
+      <p>Bridge the gap between ServiceNow incidents and Dynatrace monitoring with our AI SRE expert.</p>
+      
+      <div class="input-group">
+        <input type="text" id="incidentInput" placeholder="INC00100XX" />
+        <button class="btn-primary" id="runBtn" onclick="startPipeline()">
+          <span>Execute RCA</span> 🚀
+        </button>
+      </div>
+    </div>
+
+    <div class="dashboard-grid" id="dashboard">
+      <div class="panel">
+        <h3 style="font-size: 1.1rem; display: flex; align-items:center; gap:0.5rem">⚙️ Lifecycle Pipeline</h3>
+        <div class="pipeline-container">
+          <div class="step-node" id="step-fetch_incident">
+            <div class="icon-holder">📡</div>
+            <div class="step-info">
+              <div class="step-name">ServiceNow Ingestion</div>
+              <div class="step-status">Waiting for trigger...</div>
+            </div>
+          </div>
+          <div class="step-node" id="step-extract_id">
+            <div class="icon-holder">🔑</div>
+            <div class="step-info">
+              <div class="step-name">Identity Extraction</div>
+              <div class="step-status">Awaiting task...</div>
+            </div>
+          </div>
+          <div class="step-node" id="step-fetch_logs">
+            <div class="icon-holder">📦</div>
+            <div class="step-info">
+              <div class="step-name">Dynatrace Log Retrieval</div>
+              <div class="step-status">Awaiting task...</div>
+            </div>
+          </div>
+          <div class="step-node" id="step-analyze_logs">
+            <div class="icon-holder">🕵️</div>
+            <div class="step-info">
+              <div class="step-name">Contextual Analysis</div>
+              <div class="step-status">Awaiting task...</div>
+            </div>
+          </div>
+          <div class="step-node" id="step-remediate">
+            <div class="icon-holder">🛠️</div>
+            <div class="step-info">
+              <div class="step-name">Rectification & PR</div>
+              <div class="step-status">Awaiting task...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3 style="font-size: 1.1rem;">📟 Live Activity</h3>
+        <div class="activity-feed" id="logList">
+          <div class="log-item" style="color:var(--text-dim); border:none; opacity:0.5">Initialize a session to see traces...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="report-overlay" id="overlay">
+    <div class="report-modal">
+      <button class="close-btn" onclick="closeReport()">✕</button>
+      <div class="logo-box" style="margin-bottom: 2rem;">📄</div>
+      <div id="reportContent" class="markdown"></div>
+    </div>
+  </div>
+
+  <script>
+    const $ = (s) => document.querySelector(s);
+    
+    function appendLog(txt) {
+      const feed = $('#logList');
+      if (feed.children.length === 1 && feed.children[0].style.opacity === '0.5') feed.innerHTML = '';
+      
+      const div = document.createElement('div');
+      div.className = 'log-item';
+      const ts = new Date().toLocaleTimeString('en-US', { hour12: false });
+      div.innerHTML = `<span class="log-ts">${ts}</span> ${txt}`;
+      feed.appendChild(div);
+      feed.scrollTop = feed.scrollHeight;
+    }
+
+    function updateStep(id, status, msg) {
+      const el = $(`#step-${id}`);
+      if (!el) return;
+      el.className = `step-node ${status}`;
+      el.querySelector('.step-status').innerText = msg;
+    }
+
+    function startPipeline() {
+      const id = $('#incidentInput').value.trim();
+      if (!id) return;
+
+      $('#hero').style.display = 'none';
+      $('#dashboard').classList.add('visible');
+      appendLog(`🚀 Execution initiated for ${id}...`);
+
+      const es = new EventSource(`/api/run/${id}`);
+      
+      es.addEventListener('step', (e) => {
+        const d = JSON.parse(e.data);
+        updateStep(d.step, d.status, d.message);
+      });
+
+      es.addEventListener('log', (e) => {
+        const d = JSON.parse(e.data);
+        appendLog(d.text);
+      });
+
+      es.addEventListener('done', (e) => {
+        const d = JSON.parse(e.data);
+        es.close();
+        $('#reportContent').innerHTML = d.report_html;
+        $('#overlay').classList.add('visible');
+        appendLog(`✅ Pipeline finalized. Report generated.`);
+      });
+
+      es.onerror = () => {
+        es.close();
+        appendLog(`❌ Link severed. Check logs.`);
+      };
+    }
+
+    function closeReport() {
+      $('#overlay').classList.remove('visible');
+    }
+
+    function closeReport() {
+      $('#overlay').classList.remove('visible'); 
+      $('#hero').style.display = 'block';
+      $('#dashboard').classList.remove('visible');
+      $('#incidentInput').value = '';
+    }
+  </script>
+</body>
+</html>

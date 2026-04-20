@@ -1,0 +1,26 @@
+# ── Secrets ──────────────────────────────────────────
+.env
+
+# ── Python ──────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+venv/
+.venv/
+
+# ── Runtime artifacts ───────────────────────────────
+response.txt
+application.log
+*.log
+
+# ── OS junk ─────────────────────────────────────────
+__MACOSX/
+.DS_Store
+Thumbs.db
+
+# ── IDE ─────────────────────────────────────────────
+.vscode/
+.idea/
