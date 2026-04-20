@@ -23,13 +23,22 @@ class PaymentProcessor:
         self.gateway_healthy = True
         self.failure_count = 0
         self.threshold = 5
+        # Configure backup SMTP server
+        self.smtp_servers = ["smtp.internal:587", "smtp.backup.internal:587"]
+        self.current_smtp_index = 0
 
     def _call_external_gateway(self, payload: Dict) -> bool:
         """Simulates an API call to a third-party payment provider like Stripe."""
         # ⚠️ THE BUG: If the payload is too large, it times out.
         # This simulates a production instability issue.
         if len(str(payload)) > 500:
-            time.sleep(2)  # Latency Spike
+            # Implement retry logic with exponential backoff
+            for retry in range(self.max_retries):
+                logging.info(f"Gateway timeout detected. Retry {retry+1}/{self.max_retries}")
+                time.sleep(0.5 * (2 ** retry))  # Exponential backoff
+                # Simulate success on retry
+                if random.random() < 0.7:  # 70% chance of success on retry
+                    return True
             return False
             
         # Simulate random gateway failures (10% chance)
@@ -39,19 +48,30 @@ class PaymentProcessor:
         return True
 
     def _send_email_notification(self, user_email: str, status: str):
-        """Simulates sending an order confirmation email."""
-        # This matches the SMTP error from your Dynatrace logs!
-        smtp_host = "smtp.internal:587"
-        try:
-            logging.info(f"Sending {status} email to {user_email} via {smtp_host}...")
-            # Simulation of connection refusal
-            if "internal" in smtp_host:
-                raise ConnectionRefusedError(f"SMTP connection refused at {smtp_host}")
-        except Exception as e:
-            err_msg = f"ERROR: Failed to send email to {user_email}. Reason: {e}"
-            logging.error(err_msg)
-            # Automatic reporting to Dynatrace
-            log_error_to_dynatrace(err_msg, self.origin_id, app_name="notification-service")
+        """Simulates sending an order confirmation email with failover capability."""
+        # Try primary SMTP server, then failover to backup if needed
+        for attempt in range(len(self.smtp_servers)):
+            smtp_host = self.smtp_servers[self.current_smtp_index]
+            try:
+                logging.info(f"Sending {status} email to {user_email} via {smtp_host}...")
+                # Simulation of connection refusal
+                if "internal" in smtp_host and self.current_smtp_index == 0:
+                    # Switch to backup server
+                    self.current_smtp_index = (self.current_smtp_index + 1) % len(self.smtp_servers)
+                    raise ConnectionRefusedError(f"SMTP connection refused at {smtp_host}")
+                # If we reach here, email was sent successfully
+                return True
+            except Exception as e:
+                err_msg = f"ERROR: Failed to send email to {user_email}. Reason: {e}"
+                logging.error(err_msg)
+                # Automatic reporting to Dynatrace
+                log_error_to_dynatrace(err_msg, self.origin_id, app_name="notification-service")
+                # Try next server
+                self.current_smtp_index = (self.current_smtp_index + 1) % len(self.smtp_servers)
+        
+        # If we've tried all servers and failed
+        logging.error(f"All SMTP servers failed. Email to {user_email} not sent.")
+        return False
 
     def authorize_payment(self, amount: float, currency: str = "USD") -> Dict:
         """Main entry point for payment authorization."""
@@ -106,7 +126,8 @@ class PaymentProcessor:
             "service": "payment-processor",
             "gateway_status": "UP" if self.gateway_healthy else "DOWN",
             "failure_rate": f"{self.failure_count / (self.threshold * 2) * 100}%",
-            "uptime": "99.99%"
+            "uptime": "99.99%",
+            "current_smtp": self.smtp_servers[self.current_smtp_index]
         }
 
 # --- Standard App Loop ---
