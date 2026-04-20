@@ -105,12 +105,20 @@ class DatabaseAccessLayer:
         if not product:
             return False
             
+        # Convert quantity_change to int if it's a string
+        if isinstance(quantity_change, str):
+            try:
+                quantity_change = int(quantity_change)
+            except ValueError:
+                logger.error(f"Invalid quantity format: {quantity_change}")
+                return False
+            
         new_stock = product.stock + quantity_change
         
-        # ⚠️ HIDDEN BUG #1: ValueError for negative stock
-        # The AI Agent will need to rewrite this logic to handle negative scenarios gracefully!
+        # Handle negative stock gracefully
         if new_stock < 0:
-            raise ValueError(f"CRITICAL: Negative stock achieved for {product.product_id}. Invalid state!")
+            logger.warning(f"Attempted to set negative stock for {product.product_id}. Setting to 0 instead.")
+            new_stock = 0
             
         product.stock = new_stock
         product.last_updated = time.time()
@@ -157,8 +165,13 @@ class PricingEngine:
     def calculate_final_price(self, base_price: float, quantity: int, state_code: str) -> float:
         """Compute the final total for an order line item."""
         
-        # ⚠️ HIDDEN BUG #2: TypeError if a string is accidentally passed as quantity
-        # The autonomous healer will need to add type validation/casting here!
+        # Add type validation/casting for quantity
+        try:
+            quantity = int(quantity)
+        except (TypeError, ValueError):
+            logger.error(f"Invalid quantity format: {quantity}. Using default of 1.")
+            quantity = 1
+            
         if quantity > 50:
             logger.info("Applying bulk wholesale discount.")
             base_price = base_price * (1.0 - self.discount_rate)
@@ -265,11 +278,11 @@ class FulfillmentManager:
                     continue
                     
                 # Deduct inventory count
-                # Note: this might trigger the negative stock ValueError!
+                # Convert qty to int if it's a string
                 self.db.update_stock(pid, -qty)
                 
                 # Calculate price
-                # Note: this might trigger the TypeError if qty is a string!
+                # The pricing engine now handles type conversion
                 line_total = self.pricing.calculate_final_price(product.price, qty, state)
                 total_order_value += line_total
                 
