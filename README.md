@@ -1,4 +1,3 @@
-# Servicenow-Dynatrace---service
 # 🤖 ServiceNow × Dynatrace — AI RCA Orchestrator
 
 An end-to-end, autonomous pipeline that leverages LangGraph and generative AI (AWS Bedrock) to perform rapid Root Cause Analysis (RCA) on production incidents.

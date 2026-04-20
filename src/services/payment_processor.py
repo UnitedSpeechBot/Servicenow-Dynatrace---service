@@ -1,9 +1,10 @@
 import time
+import asyncio
 import uuid
 import random
 import logging
 from typing import Dict, Optional
-from dynatrace_logger import log_error_to_dynatrace
+from src.integrations.dynatrace.logger import log_error_to_dynatrace
 
 # Setup basic logging to console
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
@@ -108,17 +109,19 @@ class PaymentProcessor:
             "uptime": "99.99%"
         }
 
-# --- Standard App Loop (around 200 lines total) ---
+# --- Standard App Loop ---
 if __name__ == "__main__":
+    print()
     print("="*60)
     print("  🚀 Starting Enterprise Payment Service (Production Node)")
     print("="*60)
     
-    # Use the same origin_id so the logs are linked!
-    processor = PaymentProcessor(origin_id="dt0c01.UNL3GU5ZFLQMVWL3Y4M3X2DG")
+    import time
+    dynamic_origin = f"dt0c01.PAYMENT_{int(time.time())}"
+    processor = PaymentProcessor(origin_id=dynamic_origin)
 
     # Simulate a day of traffic
-    orders = [random.uniform(10.0, 500.0) for _ in range(12)]
+    orders = [random.uniform(10.0, 500.0) for _ in range(8)]
     
     for idx, amount in enumerate(orders):
         print(f"\n[Request {idx+1}] Processing Order...")
@@ -129,7 +132,7 @@ if __name__ == "__main__":
         else:
             print(f"❌ Order failed. Reason: {result['error']}")
         
-        time.sleep(1) # Realistic gap between users
+        time.sleep(0.5) 
 
     print("\n" + "="*60)
     print("  📈 End of Simulation Health Report")
@@ -138,3 +141,13 @@ if __name__ == "__main__":
     for k, v in stats.items():
         print(f"  {k.replace('_', ' ').capitalize()}: {v}")
     print("="*60)
+
+    # --- AUTONOMOUS SRE TRIGGER ---
+    if not processor.gateway_healthy:
+        print("\n🚨 CRITICAL FAILURE DETECTED: Triggering SRE Agent...")
+        import traceback
+        from src.core.autonomous_healer import run_autonomous_repair_loop
+        
+        # We manually pass the error that caused the breaker to trip
+        mock_traceback = f'File "payment_processor.py", line 77, in authorize_payment\nCRITICAL: Payment Gateway Timeout for Txn at {processor.gateway_url}'
+        asyncio.run(run_autonomous_repair_loop(mock_traceback, processor.origin_id, app_key="payment-service"))
