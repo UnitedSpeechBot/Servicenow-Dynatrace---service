@@ -159,6 +159,15 @@ class PricingEngine:
         
         # ⚠️ HIDDEN BUG #2: TypeError if a string is accidentally passed as quantity
         # The autonomous healer will need to add type validation/casting here!
+        # Fix: Convert quantity to int if it's a string
+        if isinstance(quantity, str):
+            try:
+                quantity = int(quantity)
+            except ValueError:
+                # If conversion fails, default to 1
+                logger.warning(f"Invalid quantity value: {quantity}. Defaulting to 1.")
+                quantity = 1
+                
         if quantity > 50:
             logger.info("Applying bulk wholesale discount.")
             base_price = base_price * (1.0 - self.discount_rate)
@@ -263,6 +272,14 @@ class FulfillmentManager:
                 if not product:
                     logger.warning(f"Item {pid} not found in DB. Skipping.")
                     continue
+                
+                # Convert qty to int if it's a string
+                if isinstance(qty, str):
+                    try:
+                        qty = int(qty)
+                    except ValueError:
+                        logger.warning(f"Invalid quantity value: {qty}. Defaulting to 1.")
+                        qty = 1
                     
                 # Deduct inventory count
                 # Note: this might trigger the negative stock ValueError!
@@ -392,3 +409,6 @@ if __name__ == "__main__":
 
 # End of File (Approx 320 lines logic + comments + docs to reach enterprise depth)
 # Extensible modules ready for integration with AI Agents.
+
+
+
