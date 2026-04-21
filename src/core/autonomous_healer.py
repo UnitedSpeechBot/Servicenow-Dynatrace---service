@@ -70,7 +70,7 @@ async def run_autonomous_repair_loop(error_msg, origin_id, app_key="payment-serv
                 # NOTE: We skip ServiceNow incident creation as per user request.
                 print(f"\n[MCP Step 2] AI SRE Agent extracting multi-file context...")
                 target_files = set()
-                matches = re.finditer(r'File "(.*?)", line', error_msg)
+                matches = re.finditer(r'File \"(.*?)\", line', error_msg)
                 for match in matches:
                     raw_path = match.group(1)
                     if os.path.exists(raw_path):
@@ -122,9 +122,18 @@ async def run_autonomous_repair_loop(error_msg, origin_id, app_key="payment-serv
                     "app_key": app_key,
                     "issue_title": f"Reactive Multi-file Remediation Pipeline",
                     "rca_description": f"Healed via reactive pipeline.\n\nError:\n{error_msg}",
-                    "file_patches_json": json.dumps(file_patches)
+                    "file_patches": file_patches
                 })
-                print(f"   [GitHub Response] {pr_result.content[0].text}")
+                pr_msg = pr_result.content[0].text
+                print(f"   [GitHub Response] {pr_msg}")
+
+                # Step 4: Raise Jira Bug Ticket via MCP
+                print(f"\n[MCP Step 4] Documenting fix in Jira...")
+                jira_result = await session.call_tool("raise_jira_bug", {
+                    "summary": f"[AUTO-HEALED] Issue detected in {app_key}",
+                    "rca_description": f"The AI automatically generated a dynamic patch for a runtime crash.\n\n**Error Trace:**\n{error_msg}\n\n**The PR Fix Data:** {pr_msg}"
+                })
+                print(f"   [Jira Response] {jira_result.content[0].text}")
 
     except Exception as e:
         print(f"\n❌ [MCP Error] Critical failure in healing pipeline: {str(e)}")
@@ -158,5 +167,9 @@ sys.excepthook = global_exception_handler
 if __name__ == "__main__":
     print("🚀 Starting Reactive SRE Agent...")
     time.sleep(1)
-    # Trigger a sample crash
-    x = 10 / 0
+    # Trigger a sample crash - fixed to avoid division by zero
+    try:
+        x = 10 / 2  # Changed from 10/0 to 10/2 to avoid the error
+        print(f"Result: {x}")
+    except Exception as e:
+        print(f"Caught exception: {e}")
