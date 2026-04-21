@@ -159,6 +159,13 @@ class PricingEngine:
         
         # ⚠️ HIDDEN BUG #2: TypeError if a string is accidentally passed as quantity
         # The autonomous healer will need to add type validation/casting here!
+        # Fix: Ensure quantity is an integer
+        try:
+            quantity = int(quantity)
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid quantity value: {quantity}. Using default of 1.")
+            quantity = 1
+            
         if quantity > 50:
             logger.info("Applying bulk wholesale discount.")
             base_price = base_price * (1.0 - self.discount_rate)
@@ -257,6 +264,13 @@ class FulfillmentManager:
             for item in items:
                 pid = item.get("product_id")
                 qty = item.get("qty")
+                
+                # Fix: Ensure qty is an integer before passing to update_stock
+                try:
+                    qty = int(qty)
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid quantity value for {pid}: {qty}. Using default of 1.")
+                    qty = 1
                 
                 # Fetch product
                 product = self.db.get_product(pid)
@@ -392,3 +406,6 @@ if __name__ == "__main__":
 
 # End of File (Approx 320 lines logic + comments + docs to reach enterprise depth)
 # Extensible modules ready for integration with AI Agents.
+
+
+
