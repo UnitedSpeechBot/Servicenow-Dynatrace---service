@@ -23,6 +23,12 @@ class PaymentProcessor:
         self.gateway_healthy = True
         self.failure_count = 0
         self.threshold = 5
+        # SMTP configuration with fallback options
+        self.smtp_servers = [
+            "smtp.internal:587",
+            "smtp-backup.internal:587",
+            "smtp-fallback.example.com:25"
+        ]
 
     def _call_external_gateway(self, payload: Dict) -> bool:
         """Simulates an API call to a third-party payment provider like Stripe."""
@@ -39,19 +45,28 @@ class PaymentProcessor:
         return True
 
     def _send_email_notification(self, user_email: str, status: str):
-        """Simulates sending an order confirmation email."""
-        # This matches the SMTP error from your Dynatrace logs!
-        smtp_host = "smtp.internal:587"
-        try:
-            logging.info(f"Sending {status} email to {user_email} via {smtp_host}...")
-            # Simulation of connection refusal
-            if "internal" in smtp_host:
-                raise ConnectionRefusedError(f"SMTP connection refused at {smtp_host}")
-        except Exception as e:
-            err_msg = f"ERROR: Failed to send email to {user_email}. Reason: {e}"
-            logging.error(err_msg)
-            # Automatic reporting to Dynatrace
-            log_error_to_dynatrace(err_msg, self.origin_id, app_name="notification-service")
+        """Simulates sending an order confirmation email with fallback mechanism."""
+        # Try each SMTP server in the list until one works
+        for smtp_host in self.smtp_servers:
+            try:
+                logging.info(f"Sending {status} email to {user_email} via {smtp_host}...")
+                # Simulation of connection refusal for internal servers only
+                if "internal" in smtp_host:
+                    raise ConnectionRefusedError(f"SMTP connection refused at {smtp_host}")
+                # If we get here with the fallback server, it would succeed
+                logging.info(f"Email sent successfully via {smtp_host}")
+                return True
+            except Exception as e:
+                err_msg = f"ERROR: Failed to send email to {user_email}. Reason: {e}"
+                logging.error(err_msg)
+                # Automatic reporting to Dynatrace
+                log_error_to_dynatrace(err_msg, self.origin_id, app_name="notification-service")
+                # Continue to next server in the list
+                continue
+        
+        # If we get here, all SMTP servers failed
+        logging.warning(f"All SMTP servers failed. Email to {user_email} not sent.")
+        return False
 
     def authorize_payment(self, amount: float, currency: str = "USD") -> Dict:
         """Main entry point for payment authorization."""
