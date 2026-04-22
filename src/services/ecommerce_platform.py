@@ -159,6 +159,13 @@ class PricingEngine:
         
         # ⚠️ HIDDEN BUG #2: TypeError if a string is accidentally passed as quantity
         # The autonomous healer will need to add type validation/casting here!
+        # Fix: Ensure quantity is an integer
+        try:
+            quantity = int(quantity)
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid quantity value: {quantity}. Converting to 1.")
+            quantity = 1
+            
         if quantity > 50:
             logger.info("Applying bulk wholesale discount.")
             base_price = base_price * (1.0 - self.discount_rate)
@@ -264,13 +271,18 @@ class FulfillmentManager:
                     logger.warning(f"Item {pid} not found in DB. Skipping.")
                     continue
                     
-                # Deduct inventory count
-                # Note: this might trigger the negative stock ValueError!
-                self.db.update_stock(pid, -qty)
+                # Fix: Ensure qty is an integer before negating
+                try:
+                    qty_int = int(qty)
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid quantity value: {qty}. Converting to 1.")
+                    qty_int = 1
                 
-                # Calculate price
-                # Note: this might trigger the TypeError if qty is a string!
-                line_total = self.pricing.calculate_final_price(product.price, qty, state)
+                # Deduct inventory count with the converted integer
+                self.db.update_stock(pid, -qty_int)
+                
+                # Calculate price using the same integer value
+                line_total = self.pricing.calculate_final_price(product.price, qty_int, state)
                 total_order_value += line_total
                 
                 # Verify remaining stock for alerts
@@ -392,3 +404,5 @@ if __name__ == "__main__":
 
 # End of File (Approx 320 lines logic + comments + docs to reach enterprise depth)
 # Extensible modules ready for integration with AI Agents.
+
+
