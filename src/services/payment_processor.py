@@ -41,12 +41,12 @@ class PaymentProcessor:
     def _send_email_notification(self, user_email: str, status: str):
         """Simulates sending an order confirmation email."""
         # This matches the SMTP error from your Dynatrace logs!
-        smtp_host = "smtp.internal:587"
+        smtp_host = "smtp.example.com:587"  # Changed from internal to example.com
         try:
             logging.info(f"Sending {status} email to {user_email} via {smtp_host}...")
-            # Simulation of connection refusal
-            if "internal" in smtp_host:
-                raise ConnectionRefusedError(f"SMTP connection refused at {smtp_host}")
+            # Simulation of connection refusal - removed the condition that always raises an error
+            # Normal email sending simulation
+            pass
         except Exception as e:
             err_msg = f"ERROR: Failed to send email to {user_email}. Reason: {e}"
             logging.error(err_msg)
