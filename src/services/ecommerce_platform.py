@@ -258,6 +258,14 @@ class FulfillmentManager:
                 pid = item.get("product_id")
                 qty = item.get("qty")
                 
+                # Convert qty to integer if it's a string
+                if isinstance(qty, str):
+                    try:
+                        qty = int(qty)
+                    except ValueError:
+                        logger.warning(f"Invalid quantity format for {pid}: {qty}. Skipping item.")
+                        continue
+                
                 # Fetch product
                 product = self.db.get_product(pid)
                 if not product:
