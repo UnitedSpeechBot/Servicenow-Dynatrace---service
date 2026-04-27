@@ -107,10 +107,10 @@ class DatabaseAccessLayer:
             
         new_stock = product.stock + quantity_change
         
-        # ⚠️ HIDDEN BUG #1: ValueError for negative stock
-        # The AI Agent will need to rewrite this logic to handle negative scenarios gracefully!
+        # Fixed BUG #1: Handle negative stock gracefully
         if new_stock < 0:
-            raise ValueError(f"CRITICAL: Negative stock achieved for {product.product_id}. Invalid state!")
+            logger.warning(f"Attempted to set negative stock for {product.product_id}. Setting to 0 instead.")
+            new_stock = 0
             
         product.stock = new_stock
         product.last_updated = time.time()
@@ -157,8 +157,13 @@ class PricingEngine:
     def calculate_final_price(self, base_price: float, quantity: int, state_code: str) -> float:
         """Compute the final total for an order line item."""
         
-        # ⚠️ HIDDEN BUG #2: TypeError if a string is accidentally passed as quantity
-        # The autonomous healer will need to add type validation/casting here!
+        # Fixed BUG #2: Add type validation/casting for quantity
+        try:
+            quantity = int(quantity)
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid quantity value: {quantity}. Using default of 1.")
+            quantity = 1
+            
         if quantity > 50:
             logger.info("Applying bulk wholesale discount.")
             base_price = base_price * (1.0 - self.discount_rate)
