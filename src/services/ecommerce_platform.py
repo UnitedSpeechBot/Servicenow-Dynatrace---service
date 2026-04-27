@@ -110,7 +110,8 @@ class DatabaseAccessLayer:
         # ⚠️ HIDDEN BUG #1: ValueError for negative stock
         # The AI Agent will need to rewrite this logic to handle negative scenarios gracefully!
         if new_stock < 0:
-            raise ValueError(f"CRITICAL: Negative stock achieved for {product.product_id}. Invalid state!")
+            logger.warning(f"Attempted to set negative stock for {product.product_id}. Setting to 0 instead.")
+            new_stock = 0
             
         product.stock = new_stock
         product.last_updated = time.time()
@@ -159,6 +160,12 @@ class PricingEngine:
         
         # ⚠️ HIDDEN BUG #2: TypeError if a string is accidentally passed as quantity
         # The autonomous healer will need to add type validation/casting here!
+        try:
+            quantity = int(quantity)  # Convert to int if it's a string
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid quantity value: {quantity}. Using default of 1.")
+            quantity = 1
+            
         if quantity > 50:
             logger.info("Applying bulk wholesale discount.")
             base_price = base_price * (1.0 - self.discount_rate)
@@ -264,12 +271,17 @@ class FulfillmentManager:
                     logger.warning(f"Item {pid} not found in DB. Skipping.")
                     continue
                     
+                # Ensure qty is an integer before passing to update_stock
+                try:
+                    qty_int = int(qty)
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid quantity value: {qty}. Using default of 1.")
+                    qty_int = 1
+                
                 # Deduct inventory count
-                # Note: this might trigger the negative stock ValueError!
-                self.db.update_stock(pid, -qty)
+                self.db.update_stock(pid, -qty_int)
                 
                 # Calculate price
-                # Note: this might trigger the TypeError if qty is a string!
                 line_total = self.pricing.calculate_final_price(product.price, qty, state)
                 total_order_value += line_total
                 
