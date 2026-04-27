@@ -159,6 +159,13 @@ class PricingEngine:
         
         # ⚠️ HIDDEN BUG #2: TypeError if a string is accidentally passed as quantity
         # The autonomous healer will need to add type validation/casting here!
+        # Fix: Ensure quantity is an integer
+        try:
+            quantity = int(quantity)
+        except (ValueError, TypeError):
+            logger.warning(f"Invalid quantity type received: {type(quantity)}. Converting to default value of 1.")
+            quantity = 1
+            
         if quantity > 50:
             logger.info("Applying bulk wholesale discount.")
             base_price = base_price * (1.0 - self.discount_rate)
@@ -264,9 +271,16 @@ class FulfillmentManager:
                     logger.warning(f"Item {pid} not found in DB. Skipping.")
                     continue
                     
+                # Ensure qty is an integer before updating stock
+                try:
+                    qty_int = int(qty)
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid quantity type received: {type(qty)}. Converting to default value of 1.")
+                    qty_int = 1
+                
                 # Deduct inventory count
                 # Note: this might trigger the negative stock ValueError!
-                self.db.update_stock(pid, -qty)
+                self.db.update_stock(pid, -qty_int)
                 
                 # Calculate price
                 # Note: this might trigger the TypeError if qty is a string!
