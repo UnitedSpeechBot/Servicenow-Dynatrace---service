@@ -1,232 +1,225 @@
 import time
+import asyncio
 import uuid
 import random
-import threading
-from typing import Dict, List, Optional, Tuple
+import logging
+from typing import Dict, Optional
+from src.integrations.dynatrace.logger import log_error_to_dynatrace
+
+# Setup basic logging to console
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 
 class TokenCache:
     """Token cache with automatic expiration."""
     
-    def __init__(self, max_size: int = 1000, ttl_seconds: int = 3600):
+    def __init__(self):
         self._tokens = {}
-        self._max_size = max_size
-        self._ttl_seconds = ttl_seconds
-        self._lock = threading.RLock()
-    
-    def get_token(self, user_id: str) -> Optional[Dict]:
-        """Retrieve a token by user ID if it exists and is valid."""
-        with self._lock:
-            token_data = self._tokens.get(user_id)
-            if not token_data:
-                return None
-                
-            token, timestamp = token_data
-            if time.time() - timestamp > self._ttl_seconds:
-                # Token expired
-                del self._tokens[user_id]
-                return None
-                
-            return token
-    
-    def store_token(self, user_id: str, token: Dict) -> None:
-        """Store a token with the current timestamp."""
-        with self._lock:
-            self._tokens[user_id] = (token, time.time())
-            self._trigger_background_eviction()
-    
-    def invalidate(self, user_id: str) -> bool:
-        """Invalidate a specific token."""
-        with self._lock:
-            if user_id in self._tokens:
-                del self._tokens[user_id]
-                return True
-            return False
-    
-    def _trigger_background_eviction(self) -> None:
-        """Trigger background eviction if cache is too large."""
-        with self._lock:
-            if len(self._tokens) <= self._max_size:
-                return
-                
-            # Create a copy of the keys to avoid modifying during iteration
-            tokens_to_check = list(self._tokens.keys())
+        self._expiry = {}
+        self.default_ttl = 3600  # 1 hour
+        
+    def get_token(self, token_id: str) -> Optional[Dict]:
+        """Retrieve a token if it exists and is not expired."""
+        if token_id not in self._tokens:
+            return None
             
-            # Find expired tokens
-            now = time.time()
-            expired = []
-            for tk in tokens_to_check:
-                _, timestamp = self._tokens.get(tk, (None, 0))
-                if now - timestamp > self._ttl_seconds:
-                    expired.append(tk)
+        if time.time() > self._expiry.get(token_id, 0):
+            # Token expired
+            del self._tokens[token_id]
+            del self._expiry[token_id]
+            return None
             
-            # Remove expired tokens
-            for tk in expired:
-                if tk in self._tokens:  # Check again in case it was removed
-                    del self._tokens[tk]
+        return self._tokens[token_id]
+        
+    def store_token(self, token_id: str, token_data: Dict, ttl: int = None):
+        """Store a token with expiration."""
+        if ttl is None:
+            ttl = self.default_ttl
             
-            # If still too many tokens, remove oldest
-            if len(self._tokens) > self._max_size:
-                # Sort by timestamp (oldest first)
-                sorted_tokens = sorted(
-                    self._tokens.items(),
-                    key=lambda x: x[1][1]  # Sort by timestamp
-                )
+        self._tokens[token_id] = token_data
+        self._expiry[token_id] = time.time() + ttl
+        
+        # Trigger background cleanup of expired tokens
+        self._trigger_background_eviction()
+        
+    def invalidate(self, token_id: str):
+        """Explicitly invalidate a token."""
+        if token_id in self._tokens:
+            del self._tokens[token_id]
+        if token_id in self._expiry:
+            del self._expiry[token_id]
+            
+    def _trigger_background_eviction(self):
+        """Remove expired tokens."""
+        now = time.time()
+        tokens_to_remove = []
+        
+        for tk in list(self._tokens.keys()):
+            if now > self._expiry.get(tk, 0):
+                tokens_to_remove.append(tk)
                 
-                # Remove oldest tokens until we're under the limit
-                tokens_to_remove = len(sorted_tokens) - self._max_size
-                for i in range(tokens_to_remove):
-                    if i < len(sorted_tokens):
-                        user_id = sorted_tokens[i][0]
-                        if user_id in self._tokens:  # Check again
-                            del self._tokens[user_id]
+        for tk in tokens_to_remove:
+            if tk in self._tokens:
+                del self._tokens[tk]
+            if tk in self._expiry:
+                del self._expiry[tk]
 
 
 class AuthenticationService:
-    """Authentication service with token management."""
+    """Enterprise Authentication Service with token validation."""
     
-    def __init__(self, cache_size: int = 1000, token_ttl: int = 3600):
-        self.cache = TokenCache(max_size=cache_size, ttl_seconds=token_ttl)
+    def __init__(self, origin_id: str = "dt0c01.AUTH_CLUSTER_998A2B"):
+        self.origin_id = origin_id
+        self.cache = TokenCache()
         self.failed_attempts = {}
         self.lockout_threshold = 5
         self.lockout_duration = 300  # 5 minutes
         
-    def authenticate(self, username: str, password: str, ip_address: str) -> Dict:
-        """Authenticate a user and return a token."""
-        # Check if IP is locked out
-        if self._is_ip_locked(ip_address):
-            return {
-                "status": "error",
-                "message": "Too many failed attempts. Try again later."
-            }
-        
-        # Check if user exists in cache
-        existing = self.cache.get_token(username)
-        if existing:
-            return {
-                "status": "success",
-                "token": existing["token"],
-                "expires": existing["expires"],
-                "cached": True
-            }
-        
-        # Simulate authentication logic
-        if self._validate_credentials(username, password):
-            # Reset failed attempts on success
-            if ip_address in self.failed_attempts:
-                del self.failed_attempts[ip_address]
+    def validate_token(self, token: str) -> Dict:
+        """Validate a token and return its associated data."""
+        if not token:
+            return {"valid": False, "error": "No token provided"}
             
-            # Generate new token
-            token = str(uuid.uuid4())
-            expires = int(time.time()) + 3600
+        # Check cache first
+        cached = self.cache.get_token(token)
+        if cached:
+            return {"valid": True, "user": cached.get("user"), "scopes": cached.get("scopes")}
             
-            token_data = {
-                "token": token,
+        # Token not in cache or expired
+        return {"valid": False, "error": "Invalid or expired token"}
+        
+    def _is_account_locked(self, username: str) -> bool:
+        """Check if an account is temporarily locked due to failed attempts."""
+        if username not in self.failed_attempts:
+            return False
+            
+        attempts, lockout_time = self.failed_attempts[username]
+        
+        if attempts >= self.lockout_threshold:
+            # Account is locked, check if lockout period has expired
+            if time.time() < lockout_time + self.lockout_duration:
+                return True
+            else:
+                # Lockout period expired, reset counter
+                del self.failed_attempts[username]
+                
+        return False
+        
+    def _record_failed_attempt(self, username: str):
+        """Record a failed authentication attempt."""
+        if username not in self.failed_attempts:
+            self.failed_attempts[username] = [1, time.time()]
+        else:
+            attempts, _ = self.failed_attempts[username]
+            self.failed_attempts[username] = [attempts + 1, time.time()]
+            
+    def authenticate(self, username: str, password: str, ip_address: str = "127.0.0.1") -> Dict:
+        """Authenticate a user and issue a token."""
+        # Check for account lockout
+        if self._is_account_locked(username):
+            err_msg = f"Account temporarily locked: {username}"
+            log_error_to_dynatrace(err_msg, self.origin_id, "authentication-service")
+            return {"authenticated": False, "error": "Account locked due to too many failed attempts"}
+            
+        # In a real system, we would validate against a database
+        # This is a simplified example
+        if username == "user@company.com" and password == "UserPass1!":
+            # Successful authentication
+            token_id = str(uuid.uuid4())
+            user_data = {
                 "user": username,
-                "expires": expires
+                "scopes": ["read", "write"],
+                "ip": ip_address,
+                "issued_at": time.time()
             }
             
             # Store in cache
             self.cache.store_token(
-                username,
-                token_data
+                token_id,
+                user_data,
+                ttl=3600  # 1 hour
             )
             
             return {
-                "status": "success",
-                "token": token,
-                "expires": expires,
-                "cached": False
+                "authenticated": True,
+                "token": token_id,
+                "expires_in": 3600,
+                "user": username
             }
         else:
-            # Track failed attempt
-            self._record_failed_attempt(ip_address)
+            # Failed authentication
+            self._record_failed_attempt(username)
+            err_msg = f"Failed authentication attempt for user: {username} from IP: {ip_address}"
+            log_error_to_dynatrace(err_msg, self.origin_id, "authentication-service")
             
-            return {
-                "status": "error",
-                "message": "Invalid credentials"
-            }
+            return {"authenticated": False, "error": "Invalid credentials"}
     
-    def validate_token(self, token: str) -> Dict:
-        """Validate a token."""
-        # Simulate token validation
-        # In a real system, we would look up the token in a database
-        if not token or len(token) < 10:
-            return {"valid": False, "reason": "Invalid token format"}
+    def revoke_token(self, token: str) -> bool:
+        """Explicitly revoke/invalidate a token."""
+        self.cache.invalidate(token)
+        return True
         
-        # For demo purposes, we'll say 10% of tokens are invalid
-        if random.random() < 0.1:
-            return {"valid": False, "reason": "Token expired or revoked"}
-        
-        return {"valid": True, "user": f"user_{token[-8:]}"}
-    
-    def _validate_credentials(self, username: str, password: str) -> bool:
-        """Validate user credentials."""
-        # Simplified validation for demo
-        if not username or not password:
-            return False
-        
-        # Demo: accept any password ending with '!'
-        if password.endswith('!'):
-            return True
-        
-        return False
-    
-    def _is_ip_locked(self, ip_address: str) -> bool:
-        """Check if an IP is locked out due to too many failed attempts."""
-        if ip_address not in self.failed_attempts:
-            return False
-        
-        attempts, timestamp = self.failed_attempts[ip_address]
-        
-        # Check if lockout period has expired
-        if time.time() - timestamp > self.lockout_duration:
-            del self.failed_attempts[ip_address]
-            return False
-        
-        # Check if attempts exceed threshold
-        return attempts >= self.lockout_threshold
-    
-    def _record_failed_attempt(self, ip_address: str) -> None:
-        """Record a failed authentication attempt."""
-        if ip_address not in self.failed_attempts:
-            self.failed_attempts[ip_address] = (1, time.time())
-        else:
-            attempts, _ = self.failed_attempts[ip_address]
-            self.failed_attempts[ip_address] = (attempts + 1, time.time())
+    def get_service_stats(self) -> Dict:
+        """Return service statistics."""
+        return {
+            "service": "authentication-service",
+            "status": "healthy",
+            "locked_accounts": len([u for u, (a, _) in self.failed_attempts.items() if a >= self.lockout_threshold])
+        }
 
 
-# Demo worker threads to simulate load
-def worker(worker_id: int, iterations: int = 100):
-    """Simulate authentication worker."""
-    idp = AuthenticationService()
-    
-    for i in range(iterations):
-        # Simulate random user activity
-        action = random.choice(["auth", "validate"])
-        
-        if action == "auth":
+# --- Worker Simulation ---
+async def worker(worker_id: int, idp: AuthenticationService):
+    """Simulate authentication worker process."""
+    while True:
+        try:
+            # Simulate authentication requests
             res = idp.authenticate("user@company.com", "UserPass1!", f"192.168.1.{worker_id}")
-        else:
-            token = str(uuid.uuid4())
-            res = idp.validate_token(token)
+            if res["authenticated"]:
+                # Simulate token validation
+                token = res["token"]
+                idp.validate_token(token)
+                
+                # Sometimes revoke tokens
+                if random.random() < 0.3:
+                    idp.revoke_token(token)
+        except Exception as e:
+            err_msg = f"CRITICAL ERROR in auth worker {worker_id}: {str(e)}"
+            log_error_to_dynatrace(err_msg, idp.origin_id, "authentication-service")
+            
+        await asyncio.sleep(random.uniform(0.5, 2.0))
+
+
+async def run_simulation():
+    """Run a simulation of the authentication service with multiple workers."""
+    print("\n" + "="*60)
+    print("  🔐 Starting Enterprise Authentication Service")
+    print("="*60)
+    
+    # Create service instance
+    auth_service = AuthenticationService()
+    
+    # Start worker tasks
+    workers = []
+    for i in range(3):
+        workers.append(asyncio.create_task(worker(i+1, auth_service)))
         
-        # Simulate some processing time
-        time.sleep(0.01)
+    try:
+        # Run for a while
+        await asyncio.sleep(30)
+    finally:
+        # Clean up
+        for w in workers:
+            w.cancel()
+            
+    print("\n" + "="*60)
+    print("  📊 Authentication Service Statistics")
+    print("="*60)
+    
+    stats = auth_service.get_service_stats()
+    for k, v in stats.items():
+        print(f"  {k}: {v}")
 
 
-# Main demo
+# --- Main Entry Point ---
 if __name__ == "__main__":
-    print("Starting Authentication Service demo...")
-    
-    # Start some worker threads
-    threads = []
-    for i in range(5):
-        t = threading.Thread(target=worker, args=(i,))
-        threads.append(t)
-        t.start()
-    
-    # Wait for all threads to complete
-    for t in threads:
-        t.join()
-    
-    print("Demo completed.")
+    asyncio.run(run_simulation())
