@@ -1,167 +1,144 @@
 import logging
-import random
-import time
 import uuid
+import time
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Union
 
 class Database:
-    """Mock database for inventory management."""
+    """Mock database for e-commerce platform."""
     
     def __init__(self):
-        self.stock = {
-            "PROD001": 120,
-            "PROD002": 85,
-            "PROD003": 32,
-            "PROD004": 64,
+        self.products = {
+            "P001": {"name": "Laptop", "price": 999.99, "stock": 10},
+            "P002": {"name": "Smartphone", "price": 499.99, "stock": 20},
+            "P003": {"name": "Headphones", "price": 99.99, "stock": 50},
+            "P004": {"name": "Tablet", "price": 299.99, "stock": 15},
+            "P005": {"name": "Smartwatch", "price": 199.99, "stock": 25},
         }
-        self.prices = {
-            "PROD001": 129.99,
-            "PROD002": 89.99,
-            "PROD003": 299.99,
-            "PROD004": 59.99,
+        self.orders = {}
+        self.users = {
+            "U001": {"name": "John Doe", "email": "john@example.com"},
+            "U002": {"name": "Jane Smith", "email": "jane@example.com"},
         }
-        self.names = {
-            "PROD001": "Premium Headphones",
-            "PROD002": "Wireless Mouse",
-            "PROD003": "4K Monitor",
-            "PROD004": "Keyboard",
-        }
-        
-    def get_stock(self, product_id: str) -> int:
-        """Get current stock level for a product."""
-        return self.stock.get(product_id, 0)
+    
+    def get_product(self, product_id: str) -> Optional[Dict]:
+        """Get product details by ID."""
+        return self.products.get(product_id)
     
     def update_stock(self, product_id: str, quantity_change: int) -> bool:
-        """Update stock levels."""
-        if product_id not in self.stock:
+        """Update product stock."""
+        if product_id not in self.products:
             return False
         
-        new_level = self.stock[product_id] + quantity_change
-        if new_level < 0:
-            return False
-        
-        self.stock[product_id] = new_level
+        self.products[product_id]["stock"] += quantity_change
         return True
     
-    def get_price(self, product_id: str) -> float:
-        """Get price for a product."""
-        return self.prices.get(product_id, 0.0)
+    def create_order(self, user_id: str, items: List[Tuple[str, int]]) -> str:
+        """Create a new order."""
+        order_id = f"O{uuid.uuid4().hex[:8]}"
+        self.orders[order_id] = {
+            "user_id": user_id,
+            "items": items,
+            "status": "pending",
+            "created_at": datetime.now(),
+        }
+        return order_id
     
-    def get_name(self, product_id: str) -> str:
-        """Get name for a product."""
-        return self.names.get(product_id, "Unknown Product")
+    def update_order_status(self, order_id: str, status: str) -> bool:
+        """Update order status."""
+        if order_id not in self.orders:
+            return False
+        
+        self.orders[order_id]["status"] = status
+        return True
 
+class PaymentGateway:
+    """Mock payment gateway."""
+    
+    def process_payment(self, amount: float) -> Tuple[bool, str]:
+        """Process a payment."""
+        # Simulate payment processing
+        time.sleep(0.1)
+        
+        # 95% success rate
+        if uuid.uuid4().int % 20 != 0:
+            return True, f"TXN{uuid.uuid4().hex[:10]}"
+        else:
+            return False, "Payment declined"
 
-class InventoryService:
-    """Main inventory management service."""
+class EcommercePlatform:
+    """Main e-commerce platform class."""
     
     def __init__(self):
-        self.logger = logging.getLogger("InventoryService")
         self.db = Database()
-        self.tax_rates = {
-            "CA": 0.0725,  # California
-            "NY": 0.045,   # New York
-            "TX": 0.0625,  # Texas
-            "FL": 0.06,    # Florida
-            "IL": 0.0625,  # Illinois
-            "DEFAULT": 0.05,  # Default rate
-        }
-        
-    def check_stock(self, product_id: str) -> int:
-        """Check current stock level for a product."""
-        return self.db.get_stock(product_id)
+        self.payment_gateway = PaymentGateway()
+        self.logger = logging.getLogger("ecommerce_platform")
     
-    def calculate_tax(self, subtotal: float, state: str) -> float:
-        """Calculate tax based on state."""
-        rate = self.tax_rates.get(state, self.tax_rates["DEFAULT"])
-        return subtotal * rate
+    def get_product_details(self, product_id: str) -> Optional[Dict]:
+        """Get product details."""
+        return self.db.get_product(product_id)
     
-    def calculate_total(self, items: List[Tuple[str, int]], state: str) -> Dict:
-        """Calculate order total with tax."""
-        subtotal = 0.0
-        item_details = []
+    def check_stock(self, product_id: str, quantity: int) -> bool:
+        """Check if product is in stock."""
+        product = self.db.get_product(product_id)
+        if not product:
+            return False
         
+        return product["stock"] >= quantity
+    
+    def process_order(self, user_id: str, items: List[Tuple[str, int]]) -> Tuple[bool, str, Optional[str]]:
+        """Process an order."""
+        # Check stock for all items
         for pid, qty in items:
-            price = self.db.get_price(pid)
-            item_total = price * qty
-            subtotal += item_total
-            
-            item_details.append({
-                "product_id": pid,
-                "name": self.db.get_name(pid),
-                "quantity": qty,
-                "unit_price": price,
-                "total": item_total
-            })
+            if not self.check_stock(pid, qty):
+                self.logger.error(f"Insufficient stock for product {pid}")
+                return False, "Insufficient stock", None
         
-        tax = self.calculate_tax(subtotal, state)
-        total = subtotal + tax
-        
-        return {
-            "items": item_details,
-            "subtotal": subtotal,
-            "tax_rate": self.tax_rates.get(state, self.tax_rates["DEFAULT"]),
-            "tax": tax,
-            "total": total
-        }
-    
-    def process_order(self, order_id: str, state: str, items: List[Tuple[str, Union[int, str]]]) -> Dict:
-        """Process a complete order."""
-        self.logger.info(f"Processing Order {order_id} for State {state} with {len(items)} items.")
-        
-        # Check stock availability
+        # Calculate total amount
+        total_amount = 0.0
         for pid, qty in items:
-            current_stock = self.check_stock(pid)
-            if current_stock < qty:
-                self.logger.error(f"Insufficient stock for {pid}. Requested: {qty}, Available: {current_stock}")
-                return {"status": "error", "message": f"Insufficient stock for {pid}"}
+            product = self.db.get_product(pid)
+            total_amount += product["price"] * qty
         
-        # Calculate totals
-        try:
-            order_details = self.calculate_total(items, state)
-        except Exception as e:
-            self.logger.error(f"Error calculating total: {str(e)}")
-            return {"status": "error", "message": f"Calculation error: {str(e)}"}
+        # Process payment
+        payment_success, transaction_id = self.payment_gateway.process_payment(total_amount)
+        if not payment_success:
+            self.logger.error(f"Payment failed for user {user_id}")
+            return False, "Payment failed", None
         
-        # Update inventory
-        try:
-            for pid, qty in items:
-                # Convert qty to int if it's a string
-                if isinstance(qty, str):
-                    qty = int(qty)
-                self.db.update_stock(pid, -qty)
-        except Exception as e:
-            self.logger.error(f"Error updating inventory: {str(e)}")
-            return {"status": "error", "message": f"Inventory update error: {str(e)}"}
+        # Create order
+        order_id = self.db.create_order(user_id, items)
         
-        # Apply wholesale discount for large orders
-        if sum(qty for _, qty in items) > 10:
-            self.logger.info("Applying bulk wholesale discount.")
-            discount = order_details["subtotal"] * 0.15
-            order_details["discount"] = discount
-            order_details["total"] -= discount
+        # Update stock
+        for pid, qty in items:
+            self.db.update_stock(pid, -int(qty))
         
-        self.logger.info(f"Order {order_id} processed gracefully. Total: ${order_details['total']:.2f}")
-        return {"status": "success", "order_id": order_id, **order_details}
-
-
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S,%f",
-)
+        # Update order status
+        self.db.update_order_status(order_id, "completed")
+        
+        return True, "Order processed successfully", order_id
+    
+    def get_order_status(self, order_id: str) -> Optional[str]:
+        """Get order status."""
+        if order_id not in self.db.orders:
+            return None
+        
+        return self.db.orders[order_id]["status"]
 
 # Example usage
 if __name__ == "__main__":
-    service = InventoryService()
+    # Set up logging
+    logging.basicConfig(level=logging.INFO)
     
-    # Process a sample order
-    order = service.process_order(
-        "ORD-12345",
-        "CA",
-        [("PROD001", 2), ("PROD003", 1)]
+    # Create platform instance
+    platform = EcommercePlatform()
+    
+    # Process an order
+    success, message, order_id = platform.process_order(
+        "U001", [("P001", 1), ("P003", 2)]
     )
     
-    print(f"Order processed: {order}")
+    if success:
+        print(f"Order {order_id} created: {message}")
+    else:
+        print(f"Order failed: {message}")
