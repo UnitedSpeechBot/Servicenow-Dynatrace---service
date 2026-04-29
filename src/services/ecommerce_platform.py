@@ -3,6 +3,11 @@ import uuid
 import time
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple, Union
+import os
+import sys
+
+# Ensure 'src' is findable when running directly
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 
 class Database:
     """Mock database for e-commerce platform."""
@@ -109,7 +114,7 @@ class EcommercePlatform:
         # Create order
         order_id = self.db.create_order(user_id, items)
         
-        # Update stock - ensure qty is converted to int
+        # Update stock
         for pid, qty in items:
             self.db.update_stock(pid, -int(qty))
         
@@ -133,12 +138,17 @@ if __name__ == "__main__":
     # Create platform instance
     platform = EcommercePlatform()
     
-    # Process an order
-    success, message, order_id = platform.process_order(
-        "U001", [("P001", 1), ("P003", 2)]
-    )
-    
-    if success:
-        print(f"Order {order_id} created: {message}")
-    else:
-        print(f"Order failed: {message}")
+    # Process an order - TRIGGER THE BUG by passing string "1" for quantity
+    try:
+        success, message, order_id = platform.process_order(
+            "U001", [("P001", "1"), ("P003", 2)]
+        )
+        if success:
+            print(f"Order {order_id} created: {message}")
+    except Exception as e:
+        import traceback
+        err_msg = f"TypeError: {e}\n{traceback.format_exc()}"
+        print(f"❌ CRASHED: {err_msg}")
+        # Report to mirror
+        from src.services.payment_processor import log_error_to_dynatrace
+        log_error_to_dynatrace(err_msg, "dt0c01.INVENTORY_1777364649", "ecommerce-platform")
