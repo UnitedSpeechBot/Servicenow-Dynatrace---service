@@ -23,14 +23,20 @@ class PaymentProcessor:
         self.gateway_healthy = True
         self.failure_count = 0
         self.threshold = 5
+        self.gateway_timeout = 5  # Add configurable timeout in seconds
 
     def _call_external_gateway(self, payload: Dict) -> bool:
         """Simulates an API call to a third-party payment provider like Stripe."""
-        # Fix: Limit payload size to prevent timeouts
-        if len(str(payload)) > 500:
-            # Instead of timing out, truncate or handle large payloads appropriately
-            logging.warning("Large payload detected, truncating to prevent timeout")
-            return True  # Return success instead of timing out
+        # Fix: Add timeout handling to prevent gateway timeouts
+        start_time = time.time()
+        
+        # Simulate network delay
+        time.sleep(random.uniform(0.1, 0.3))
+        
+        # Check if operation exceeded timeout
+        if time.time() - start_time > self.gateway_timeout:
+            logging.error(f"Gateway timeout exceeded: {self.gateway_timeout}s")
+            return False
             
         # Simulate random gateway failures (10% chance)
         if random.random() < 0.10:
