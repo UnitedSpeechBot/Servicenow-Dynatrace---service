@@ -23,11 +23,10 @@ class PaymentProcessor:
         self.gateway_healthy = True
         self.failure_count = 0
         self.threshold = 5
-        self.gateway_timeout = 5  # Add configurable timeout in seconds
+        self.gateway_timeout = 30  # Increased timeout to 30 seconds to prevent gateway timeouts
 
     def _call_external_gateway(self, payload: Dict) -> bool:
         """Simulates an API call to a third-party payment provider like Stripe."""
-        # Fix: Add timeout handling to prevent gateway timeouts
         start_time = time.time()
         
         # Simulate network delay
@@ -46,7 +45,6 @@ class PaymentProcessor:
 
     def _send_email_notification(self, user_email: str, status: str):
         """Simulates sending an order confirmation email."""
-        # Fix: Use correct SMTP host that doesn't contain 'internal'
         smtp_host = "smtp.example.com:587"
         try:
             logging.info(f"Sending {status} email to {user_email} via {smtp_host}...")
@@ -108,7 +106,6 @@ class PaymentProcessor:
 
     def get_service_stats(self) -> Dict:
         """Returns health metrics for Prometheus/Dynatrace."""
-        # Fix: Handle division by zero when threshold is 0
         failure_rate = 0
         if self.threshold > 0:
             failure_rate = (self.failure_count / (self.threshold * 2)) * 100
