@@ -9,8 +9,18 @@ from typing import Dict, Optional
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 
 def log_error_to_dynatrace(error_msg: str, origin_id: str, app_name: str = "unknown"):
-    """Mock function to log errors to Dynatrace."""
-    logging.info(f"  [Dynatrace] ✅ Log ingested (HTTP 204) — origin: {origin_id}")
+    """Appends a real error log to the local mirror for the SRE Agent to find."""
+    import json
+    log_entry = {
+        "level": "ERROR",
+        "dt.auth.origin": origin_id,
+        "application": app_name,
+        "namespace": "sre-orchestrator-tcs",
+        "content": error_msg
+    }
+    with open("local_dynatrace_mirror.jsonl", "a", encoding="utf-8") as f:
+        f.write(json.dumps(log_entry) + "\n")
+    logging.info(f"  [Dynatrace] 📡 Log reported to mirror — origin: {origin_id}")
 
 class PaymentProcessor:
     """A Production-grade Payment Processing Service.
@@ -24,7 +34,7 @@ class PaymentProcessor:
         self.gateway_healthy = True
         self.failure_count = 0
         self.threshold = 5
-        self.gateway_timeout = 1.0  # Timeout in seconds
+        self.gateway_timeout = 5.0  # Aggressive timeout to trigger bug
 
     def _call_external_gateway(self, payload: Dict) -> bool:
         """Simulates an API call to a third-party payment provider like Stripe."""
