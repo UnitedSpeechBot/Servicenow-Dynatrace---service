@@ -5,6 +5,11 @@ import logging
 from typing import Dict, Optional, List
 from datetime import datetime, timedelta
 import threading
+import os
+import sys
+
+# Ensure 'src' is findable when running directly
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "../../")))
 
 # Setup basic logging to console
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
@@ -64,16 +69,22 @@ class TokenCache:
     def _trigger_background_eviction(self):
         """Remove expired tokens and enforce size limits."""
         with self._lock:
-            # Copy keys to avoid dictionary changed size during iteration
+            # Create a copy of keys to avoid RuntimeError during iteration
             token_keys = list(self._tokens.keys())
             
             # Remove expired tokens
             now = datetime.now()
-            for tk in token_keys:
-                if tk in self._tokens:
-                    expiry, _, _ = self._tokens[tk]
-                    if now > expiry:
-                        self._tokens.pop(tk, None)
+            try:
+                for tk in token_keys:
+                    if tk in self._tokens:
+                        expiry, _, _ = self._tokens[tk]
+                        if now > expiry:
+                            del self._tokens[tk]
+            except RuntimeError as e:
+                err_msg = f"RuntimeError: {e}"
+                from src.services.payment_processor import log_error_to_dynatrace
+                log_error_to_dynatrace(err_msg, "dt0c01.AUTH_CLUSTER_998A2B", "authentication-service")
+                raise e
             
             # Enforce size limit if still too large
             if len(self._tokens) > self._max_size:
@@ -226,7 +237,13 @@ if __name__ == "__main__":
     # Create service with unique origin ID for tracing
     import time
     dynamic_origin = f"dt0c01.AUTH_CLUSTER_{int(time.time())}"
+    # Set TTL to 0 to force immediate expiration and trigger the eviction bug
     auth_service = IdentityProvider(origin_id=dynamic_origin)
+    auth_service.cache._ttl = 0 
+    
+    # Pre-populate some tokens
+    for i in range(10):
+        auth_service.cache.store_token(f"old_token_{i}", "user@company.com")
     
     # Simulate multiple worker threads
     threads = []
