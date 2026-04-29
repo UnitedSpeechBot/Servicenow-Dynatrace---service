@@ -70,9 +70,10 @@ class TokenCache:
             # Remove expired tokens
             now = datetime.now()
             for tk in token_keys:
-                expiry, _, _ = self._tokens.get(tk, (now, None, None))
-                if now > expiry:
-                    self._tokens.pop(tk, None)
+                if tk in self._tokens:
+                    expiry, _, _ = self._tokens[tk]
+                    if now > expiry:
+                        self._tokens.pop(tk, None)
             
             # Enforce size limit if still too large
             if len(self._tokens) > self._max_size:

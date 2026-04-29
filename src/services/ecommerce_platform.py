@@ -109,7 +109,7 @@ class EcommercePlatform:
         # Create order
         order_id = self.db.create_order(user_id, items)
         
-        # Update stock
+        # Update stock - ensure qty is converted to int
         for pid, qty in items:
             self.db.update_stock(pid, -int(qty))
         
