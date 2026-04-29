@@ -93,15 +93,25 @@ class EcommercePlatform:
     
     def process_order(self, user_id: str, items: List[Tuple[str, int]]) -> Tuple[bool, str, Optional[str]]:
         """Process an order."""
-        # Check stock for all items
+        # Normalize items to ensure quantities are integers
+        normalized_items = []
         for pid, qty in items:
+            try:
+                qty_int = int(qty)
+                normalized_items.append((pid, qty_int))
+            except (ValueError, TypeError) as e:
+                self.logger.error(f"Invalid quantity for product {pid}: {qty}")
+                return False, f"Invalid quantity for product {pid}", None
+        
+        # Check stock for all items
+        for pid, qty in normalized_items:
             if not self.check_stock(pid, qty):
                 self.logger.error(f"Insufficient stock for product {pid}")
                 return False, "Insufficient stock", None
         
         # Calculate total amount
         total_amount = 0.0
-        for pid, qty in items:
+        for pid, qty in normalized_items:
             product = self.db.get_product(pid)
             total_amount += product["price"] * qty
         
@@ -112,11 +122,11 @@ class EcommercePlatform:
             return False, "Payment failed", None
         
         # Create order
-        order_id = self.db.create_order(user_id, items)
+        order_id = self.db.create_order(user_id, normalized_items)
         
         # Update stock
-        for pid, qty in items:
-            self.db.update_stock(pid, -int(qty))
+        for pid, qty in normalized_items:
+            self.db.update_stock(pid, -qty)
         
         # Update order status
         self.db.update_order_status(order_id, "completed")
