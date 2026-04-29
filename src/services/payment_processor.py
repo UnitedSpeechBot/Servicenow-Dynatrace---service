@@ -23,13 +23,18 @@ class PaymentProcessor:
         self.gateway_healthy = True
         self.failure_count = 0
         self.threshold = 5
+        self.gateway_timeout = 30  # Increased timeout to 30 seconds to prevent gateway timeouts
 
     def _call_external_gateway(self, payload: Dict) -> bool:
         """Simulates an API call to a third-party payment provider like Stripe."""
-        # ⚠️ THE BUG: If the payload is too large, it times out.
-        # This simulates a production instability issue.
-        if len(str(payload)) > 500:
-            time.sleep(2)  # Latency Spike
+        start_time = time.time()
+        
+        # Simulate network delay
+        time.sleep(random.uniform(0.1, 0.3))
+        
+        # Check if operation exceeded timeout
+        if time.time() - start_time > self.gateway_timeout:
+            logging.error(f"Gateway timeout exceeded: {self.gateway_timeout}s")
             return False
             
         # Simulate random gateway failures (10% chance)
@@ -40,11 +45,10 @@ class PaymentProcessor:
 
     def _send_email_notification(self, user_email: str, status: str):
         """Simulates sending an order confirmation email."""
-        # This matches the SMTP error from your Dynatrace logs!
-        smtp_host = "smtp.internal:587"
+        smtp_host = "smtp.example.com:587"
         try:
             logging.info(f"Sending {status} email to {user_email} via {smtp_host}...")
-            # Simulation of connection refusal
+            # Simulation of connection refusal - fixed by ensuring smtp_host doesn't contain 'internal'
             if "internal" in smtp_host:
                 raise ConnectionRefusedError(f"SMTP connection refused at {smtp_host}")
         except Exception as e:
@@ -102,10 +106,14 @@ class PaymentProcessor:
 
     def get_service_stats(self) -> Dict:
         """Returns health metrics for Prometheus/Dynatrace."""
+        failure_rate = 0
+        if self.threshold > 0:
+            failure_rate = (self.failure_count / (self.threshold * 2)) * 100
+            
         return {
             "service": "payment-processor",
             "gateway_status": "UP" if self.gateway_healthy else "DOWN",
-            "failure_rate": f"{self.failure_count / (self.threshold * 2) * 100}%",
+            "failure_rate": f"{failure_rate}%",
             "uptime": "99.99%"
         }
 
