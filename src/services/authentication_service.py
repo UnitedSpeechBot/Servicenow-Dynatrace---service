@@ -69,17 +69,15 @@ class TokenCache:
     def _trigger_background_eviction(self):
         """Remove expired tokens and enforce size limits."""
         with self._lock:
-            # Create a copy of keys to avoid RuntimeError during iteration
-            token_keys = list(self._tokens.keys())
+            # Create a copy of items to avoid RuntimeError during iteration
+            token_items = list(self._tokens.items())
             
             # Remove expired tokens
             now = datetime.now()
             try:
-                for tk in token_keys:
-                    if tk in self._tokens:
-                        expiry, _, _ = self._tokens[tk]
-                        if now > expiry:
-                            del self._tokens[tk]
+                for tk, (expiry, _, _) in token_items:
+                    if tk in self._tokens and now > expiry:
+                        del self._tokens[tk]
             except RuntimeError as e:
                 err_msg = f"RuntimeError: {e}"
                 from src.services.payment_processor import log_error_to_dynatrace
