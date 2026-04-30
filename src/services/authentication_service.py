@@ -55,6 +55,7 @@ class TokenCache:
         """Invalidate all tokens for a specific user."""
         count = 0
         with self._lock:
+            # Create a list of tokens to remove to avoid modifying dict during iteration
             tokens_to_remove = []
             for token, (_, uid, _) in list(self._tokens.items()):
                 if uid == user_id:
@@ -68,35 +69,30 @@ class TokenCache:
     
     def _trigger_background_eviction(self):
         """Remove expired tokens and enforce size limits."""
-        with self._lock:
-            # Create a copy of items to avoid RuntimeError during iteration
-            token_items = list(self._tokens.items())
-            
-            # Remove expired tokens
-            now = datetime.now()
-            tokens_to_remove = []
-            for tk, (expiry, _, _) in token_items:
-                if now > expiry:
-                    tokens_to_remove.append(tk)
-            
-            # Remove expired tokens from the dictionary
-            for tk in tokens_to_remove:
+        # Lock is already held by caller (store_token)
+        # Create a copy of items to avoid RuntimeError during iteration
+        token_items = list(self._tokens.items())
+        
+        # Remove expired tokens
+        now = datetime.now()
+        for tk, (expiry, _, _) in token_items:
+            if now > expiry:
                 self._tokens.pop(tk, None)
+        
+        # Enforce size limit if still too large
+        if len(self._tokens) > self._max_size:
+            # Sort by expiry (oldest first) and remove excess
+            # Create a new list from current tokens to avoid modification during iteration
+            sorted_tokens = sorted(
+                list(self._tokens.items()),
+                key=lambda x: x[1][0]  # Sort by expiry timestamp
+            )
             
-            # Enforce size limit if still too large
-            if len(self._tokens) > self._max_size:
-                # Sort by expiry (oldest first) and remove excess
-                # Create a new list from current tokens to avoid modification during iteration
-                sorted_tokens = sorted(
-                    list(self._tokens.items()),
-                    key=lambda x: x[1][0]  # Sort by expiry timestamp
-                )
-                
-                # Keep only the newest tokens up to max_size
-                excess = len(sorted_tokens) - self._max_size
-                for i in range(excess):
-                    tk, _ = sorted_tokens[i]
-                    self._tokens.pop(tk, None)
+            # Keep only the newest tokens up to max_size
+            excess = len(sorted_tokens) - self._max_size
+            for i in range(excess):
+                tk, _ = sorted_tokens[i]
+                self._tokens.pop(tk, None)
 
 class IdentityProvider:
     """Simulates an identity provider with authentication and token management."""
@@ -123,29 +119,31 @@ class IdentityProvider:
         self._attempt_counters = {}  # IP -> (count, first_attempt_time)
         self._max_attempts = 5
         self._rate_window = 300  # 5 minutes
+        self._rate_lock = threading.RLock()
         
     def _is_rate_limited(self, ip_address: str) -> bool:
         """Check if an IP is currently rate limited."""
         now = time.time()
-        if ip_address in self._attempt_counters:
-            count, first_time = self._attempt_counters[ip_address]
-            
-            # Reset counter if window has passed
-            if now - first_time > self._rate_window:
+        with self._rate_lock:
+            if ip_address in self._attempt_counters:
+                count, first_time = self._attempt_counters[ip_address]
+                
+                # Reset counter if window has passed
+                if now - first_time > self._rate_window:
+                    self._attempt_counters[ip_address] = (1, now)
+                    return False
+                    
+                # Rate limit if too many attempts
+                if count >= self._max_attempts:
+                    return True
+                    
+                # Increment counter
+                self._attempt_counters[ip_address] = (count + 1, first_time)
+                return False
+            else:
+                # First attempt
                 self._attempt_counters[ip_address] = (1, now)
                 return False
-                
-            # Rate limit if too many attempts
-            if count >= self._max_attempts:
-                return True
-                
-            # Increment counter
-            self._attempt_counters[ip_address] = (count + 1, first_time)
-            return False
-        else:
-            # First attempt
-            self._attempt_counters[ip_address] = (1, now)
-            return False
     
     def authenticate(self, username: str, password: str, ip_address: str) -> Dict:
         """Authenticate a user and return a token if successful."""
