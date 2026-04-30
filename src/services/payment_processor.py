@@ -34,7 +34,7 @@ class PaymentProcessor:
         self.gateway_healthy = True
         self.failure_count = 0
         self.threshold = 5
-        self.gateway_timeout = 30.0  # Increased timeout to prevent false timeouts
+        self.gateway_timeout = 5.0  # Reasonable timeout in seconds
 
     def _call_external_gateway(self, payload: Dict) -> bool:
         """Simulates an API call to a third-party payment provider like Stripe."""
@@ -61,7 +61,8 @@ class PaymentProcessor:
         smtp_host = "smtp.example.com:587"
         try:
             logging.info(f"Sending {status} email to {user_email} via {smtp_host}...")
-            # Removed the internal check that was causing connection refusal
+            # Simulate email sending without actual connection
+            time.sleep(0.1)
         except Exception as e:
             err_msg = f"ERROR: Failed to send email to {user_email}. Reason: {e}"
             logging.error(err_msg)

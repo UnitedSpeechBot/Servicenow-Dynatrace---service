@@ -56,7 +56,7 @@ class TokenCache:
         count = 0
         with self._lock:
             tokens_to_remove = []
-            for token, (_, uid, _) in self._tokens.items():
+            for token, (_, uid, _) in list(self._tokens.items()):
                 if uid == user_id:
                     tokens_to_remove.append(token)
             
@@ -80,15 +80,19 @@ class TokenCache:
                         del self._tokens[tk]
             except RuntimeError as e:
                 err_msg = f"RuntimeError: {e}"
-                from src.services.payment_processor import log_error_to_dynatrace
-                log_error_to_dynatrace(err_msg, "dt0c01.AUTH_CLUSTER_998A2B", "authentication-service")
+                try:
+                    from src.services.payment_processor import log_error_to_dynatrace
+                    log_error_to_dynatrace(err_msg, "dt0c01.AUTH_CLUSTER_998A2B", "authentication-service")
+                except ImportError:
+                    logging.error(err_msg)
                 raise e
             
             # Enforce size limit if still too large
             if len(self._tokens) > self._max_size:
                 # Sort by expiry (oldest first) and remove excess
+                # Create a new list from current tokens to avoid modification during iteration
                 sorted_tokens = sorted(
-                    self._tokens.items(),
+                    list(self._tokens.items()),
                     key=lambda x: x[1][0]  # Sort by expiry timestamp
                 )
                 

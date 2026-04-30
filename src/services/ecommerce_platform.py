@@ -160,5 +160,8 @@ if __name__ == "__main__":
         err_msg = f"TypeError: {e}\n{traceback.format_exc()}"
         print(f"❌ CRASHED: {err_msg}")
         # Report to mirror
-        from src.services.payment_processor import log_error_to_dynatrace
-        log_error_to_dynatrace(err_msg, "dt0c01.INVENTORY_1777364649", "ecommerce-platform")
+        try:
+            from src.services.payment_processor import log_error_to_dynatrace
+            log_error_to_dynatrace(err_msg, "dt0c01.INVENTORY_1777364649", "ecommerce-platform")
+        except ImportError:
+            logging.error("Could not import log_error_to_dynatrace")
