@@ -74,18 +74,14 @@ class TokenCache:
             
             # Remove expired tokens
             now = datetime.now()
-            try:
-                for tk, (expiry, _, _) in token_items:
-                    if tk in self._tokens and now > expiry:
-                        del self._tokens[tk]
-            except RuntimeError as e:
-                err_msg = f"RuntimeError: {e}"
-                try:
-                    from src.services.payment_processor import log_error_to_dynatrace
-                    log_error_to_dynatrace(err_msg, "dt0c01.AUTH_CLUSTER_998A2B", "authentication-service")
-                except ImportError:
-                    logging.error(err_msg)
-                raise e
+            tokens_to_remove = []
+            for tk, (expiry, _, _) in token_items:
+                if now > expiry:
+                    tokens_to_remove.append(tk)
+            
+            # Remove expired tokens from the dictionary
+            for tk in tokens_to_remove:
+                self._tokens.pop(tk, None)
             
             # Enforce size limit if still too large
             if len(self._tokens) > self._max_size:
