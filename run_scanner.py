@@ -1,66 +1,90 @@
-import os
-import glob
 import subprocess
+import sys
 import time
-import asyncio
-from src.core.autonomous_healer import run_autonomous_repair_loop
+import logging
+import signal
+from pathlib import Path
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 
 def test_all_files_and_heal():
-    """
-    The Universal SRE Scanner:
-    1. Finds EVERY python file in the directory (even new ones).
-    2. Runs them isolated from each other.
-    3. If any file crashes, it intercepts the error and raises a PR for it.
-    """
-    print("="*60)
-    print(" 🛠️  ENTERPRISE SRE SCANNER: Testing Entire Repo")
-    print("="*60)
+    """Tests all Python files and triggers healing if needed."""
+    print("\n" + "="*60)
+    print("  🔍 Starting System Scanner")
+    print("="*60 + "\n")
     
-    ignore_list = []
+    # Find all Python files in src directory
+    src_dir = Path("src")
+    if not src_dir.exists():
+        logging.error("src directory not found")
+        return
     
-    py_files = [f for f in glob.glob("src/services/*.py") if f not in ignore_list]
+    python_files = list(src_dir.rglob("*.py"))
+    logging.info(f"Found {len(python_files)} Python files to scan")
     
-    print(f"[Scanner] Found {len(py_files)} services to inspect.\n")
+    failed_files = []
     
-    for script in py_files:
-        print(f"\n▶️ Running {script} ...")
+    for py_file in python_files:
+        logging.info(f"Testing {py_file}...")
         
-        # We use Popen and PYTHONUNBUFFERED so you can see live logs line-by-line!
-        env = os.environ.copy()
-        env["PYTHONUNBUFFERED"] = "1"
-        env["PYTHONPATH"] = os.path.abspath(os.path.dirname(__file__))
-
-        process = subprocess.Popen(
-            [os.sys.executable, script], 
-            stdout=subprocess.PIPE, 
-            stderr=subprocess.STDOUT,
-            text=True,
-            env=env
-        )
-        
-        # Read the output live and print it to the screen instantly
-        output_lines = []
-        for line in process.stdout:
-            print(line, end="")  # Stream it live!
-            output_lines.append(line)
+        try:
+            # Run the file with a timeout to prevent hanging
+            process = subprocess.Popen(
+                [sys.executable, str(py_file)],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1
+            )
             
-        process.wait()
-        full_output = "".join(output_lines)
-        
-        # Detect if it failed/crashed
-        if process.returncode != 0:
-            print(f"\n💥 CRASH DETECTED IN {script}! Passing to SRE Agent...")
-            
-            # Format a clean traceback so the AI knows EXACTLY which file failed
-            if f'File "{script}"' not in full_output:
-                 full_output = f'Traceback (most recent call last):\n  File "{script}", line 1, in <module>\n' + full_output
-                 
-            # Automatically trigger Dynatrace Logs and the LLM PR Fix! (ServiceNow is manual)
-            origin_id = f"dt0c01.AUTO_SCAN_{int(time.time())}"
-            app_key = os.path.basename(script).replace(".py", "")
-            asyncio.run(run_autonomous_repair_loop(full_output, origin_id, app_key=app_key))
-        else:
-            print(f"✅ {script} finished executing.")
+            try:
+                # Wait for process with timeout
+                stdout, stderr = process.communicate(timeout=30)
+                
+                if process.returncode != 0:
+                    logging.error(f"❌ {py_file} failed with return code {process.returncode}")
+                    if stderr:
+                        logging.error(f"Error output: {stderr[:500]}")
+                    failed_files.append(str(py_file))
+                else:
+                    logging.info(f"✅ {py_file} passed")
+                    
+            except subprocess.TimeoutExpired:
+                logging.warning(f"⏱️  {py_file} timed out after 30 seconds")
+                process.kill()
+                process.communicate()
+                
+        except KeyboardInterrupt:
+            logging.info("\n⚠️  Scan interrupted by user")
+            if 'process' in locals():
+                process.terminate()
+                process.wait()
+            break
+        except Exception as e:
+            logging.error(f"Error testing {py_file}: {e}")
+            failed_files.append(str(py_file))
+    
+    # Print summary
+    print("\n" + "="*60)
+    print("  📊 Scan Summary")
+    print("="*60)
+    print(f"  Total files scanned: {len(python_files)}")
+    print(f"  Failed: {len(failed_files)}")
+    if failed_files:
+        print("\n  Failed files:")
+        for f in failed_files:
+            print(f"    - {f}")
+    print("="*60 + "\n")
+    
+    return len(failed_files) == 0
 
 if __name__ == "__main__":
-    test_all_files_and_heal()
+    try:
+        success = test_all_files_and_heal()
+        sys.exit(0 if success else 1)
+    except KeyboardInterrupt:
+        logging.info("\n⚠️  Scanner interrupted by user")
+        sys.exit(130)
+    except Exception as e:
+        logging.error(f"Scanner failed: {e}")
+        sys.exit(1)
