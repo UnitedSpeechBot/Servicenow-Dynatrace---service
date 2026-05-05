@@ -89,29 +89,39 @@ class EcommercePlatform:
         if not product:
             return False
         
+        # Convert quantity to int if it's a string
+        if isinstance(quantity, str):
+            try:
+                quantity = int(quantity)
+            except (ValueError, TypeError):
+                self.logger.error(f"Invalid quantity type: {type(quantity)}")
+                return False
+        
         return product["stock"] >= quantity
     
-    def process_order(self, user_id: str, items: List[Tuple[str, int]]) -> Tuple[bool, str, Optional[str]]:
+    def process_order(self, user_id: str, items: List[Tuple[str, Union[int, str]]]) -> Tuple[bool, str, Optional[str]]:
         """Process an order."""
-        # Check stock for all items
+        # Normalize items to ensure quantities are integers
+        normalized_items = []
         for pid, qty in items:
-            # Convert qty to int if it's a string
-            try:
-                qty = int(qty)
-            except (ValueError, TypeError):
-                self.logger.error(f"Invalid quantity type for product {pid}: {type(qty)}")
-                return False, "Invalid quantity", None
-            
+            if isinstance(qty, str):
+                try:
+                    qty = int(qty)
+                except (ValueError, TypeError):
+                    self.logger.error(f"Invalid quantity for product {pid}: {qty}")
+                    return False, f"Invalid quantity for product {pid}", None
+            normalized_items.append((pid, qty))
+        
+        # Check stock for all items
+        for pid, qty in normalized_items:
             if not self.check_stock(pid, qty):
                 self.logger.error(f"Insufficient stock for product {pid}")
                 return False, "Insufficient stock", None
         
         # Calculate total amount
         total_amount = 0.0
-        for pid, qty in items:
+        for pid, qty in normalized_items:
             product = self.db.get_product(pid)
-            # Ensure qty is an integer
-            qty = int(qty)
             total_amount += product["price"] * qty
         
         # Process payment
@@ -120,8 +130,7 @@ class EcommercePlatform:
             self.logger.error(f"Payment failed for user {user_id}")
             return False, "Payment failed", None
         
-        # Create order with normalized items (ensure quantities are integers)
-        normalized_items = [(pid, int(qty)) for pid, qty in items]
+        # Create order
         order_id = self.db.create_order(user_id, normalized_items)
         
         # Update stock
