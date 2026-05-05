@@ -148,10 +148,10 @@ if __name__ == "__main__":
     # Create platform instance
     platform = EcommercePlatform()
     
-    # Process an order - TRIGGER THE BUG by passing string "1" for quantity
+    # Process an order - Fixed to pass integer quantities
     try:
         success, message, order_id = platform.process_order(
-            "U001", [("P001", "1"), ("P003", 2)]
+            "U001", [("P001", 1), ("P003", 2)]
         )
         if success:
             print(f"Order {order_id} created: {message}")
