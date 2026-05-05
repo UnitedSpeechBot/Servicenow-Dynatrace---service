@@ -205,21 +205,19 @@ class IdentityProvider:
         return {"status": "SUCCESS", "sessions_terminated": count}
 
 # --- Worker Thread Simulation ---
-def worker(worker_id: int):
+def worker(worker_id: int, auth_service: IdentityProvider):
     """Simulate authentication traffic."""
-    idp = IdentityProvider(origin_id=f"dt0c01.AUTH_WORKER_{worker_id}")
-    
     # Simulate some authentication attempts
     for _ in range(3):
-        res = idp.authenticate("user@company.com", "UserPass1!", f"192.168.1.{worker_id}")
+        res = auth_service.authenticate("user@company.com", "UserPass1!", f"192.168.1.{worker_id}")
         if res["status"] == "SUCCESS":
             token = res["token"]
             
             # Validate token
-            idp.validate_session(token)
+            auth_service.validate_session(token)
             
             # Logout
-            idp.logout(token)
+            auth_service.logout(token)
         
         time.sleep(0.5)
 
@@ -233,18 +231,16 @@ if __name__ == "__main__":
     # Create service with unique origin ID for tracing
     import time
     dynamic_origin = f"dt0c01.AUTH_CLUSTER_{int(time.time())}"
-    # Set TTL to 0 to force immediate expiration and trigger the eviction bug
     auth_service = IdentityProvider(origin_id=dynamic_origin)
-    auth_service.cache._ttl = 0 
     
-    # Pre-populate some tokens
+    # Pre-populate some tokens with normal TTL
     for i in range(10):
         auth_service.cache.store_token(f"old_token_{i}", "user@company.com")
     
     # Simulate multiple worker threads
     threads = []
     for i in range(5):
-        t = threading.Thread(target=worker, args=(i,))
+        t = threading.Thread(target=worker, args=(i, auth_service))
         threads.append(t)
         t.start()
     
