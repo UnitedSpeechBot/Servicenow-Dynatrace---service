@@ -145,8 +145,25 @@ class IdentityProvider:
                 self._attempt_counters[ip_address] = (1, now)
                 return False
     
+    def _cleanup_rate_limit_counters(self):
+        """Clean up expired rate limit counters to prevent memory leak."""
+        now = time.time()
+        with self._rate_lock:
+            # Create a list of IPs to remove to avoid modifying dict during iteration
+            ips_to_remove = []
+            for ip, (_, first_time) in list(self._attempt_counters.items()):
+                if now - first_time > self._rate_window:
+                    ips_to_remove.append(ip)
+            
+            for ip in ips_to_remove:
+                del self._attempt_counters[ip]
+    
     def authenticate(self, username: str, password: str, ip_address: str) -> Dict:
         """Authenticate a user and return a token if successful."""
+        # Periodically clean up rate limit counters
+        if random.random() < 0.1:  # 10% chance to trigger cleanup
+            self._cleanup_rate_limit_counters()
+        
         # Check rate limiting
         if self._is_rate_limited(ip_address):
             error_msg = f"Rate limit exceeded for IP {ip_address}"
@@ -214,8 +231,11 @@ def worker(worker_id: int, auth_service: IdentityProvider):
         except Exception as e:
             import traceback
             err_msg = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
-            from src.services.payment_processor import log_error_to_dynatrace
-            log_error_to_dynatrace(err_msg, auth_service.origin_id, "authentication-service")
+            try:
+                from src.services.payment_processor import log_error_to_dynatrace
+                log_error_to_dynatrace(err_msg, auth_service.origin_id, "authentication-service")
+            except ImportError:
+                logging.error(f"Could not import log_error_to_dynatrace: {err_msg}")
             break
         if res["status"] == "SUCCESS":
             token = res["token"]
