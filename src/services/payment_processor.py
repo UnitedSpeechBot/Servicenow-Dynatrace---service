@@ -38,20 +38,21 @@ class PaymentProcessor:
 
     def _call_external_gateway(self, payload: Dict) -> bool:
         """Simulates an API call to a third-party payment provider like Stripe."""
+        # Simulate network call with timeout
         start_time = time.time()
         
-        # Simulate network delay
-        delay = random.uniform(0.1, 0.3)
-        time.sleep(delay)
+        # Simulate processing time (90% success rate)
+        processing_time = random.uniform(0.1, 0.5)
+        time.sleep(processing_time)
         
-        # Check if operation exceeded timeout
         elapsed = time.time() - start_time
+        
+        # Check if we exceeded timeout
         if elapsed > self.gateway_timeout:
-            logging.error(f"Gateway timeout exceeded: {self.gateway_timeout}s")
-            return False
-            
-        # Simulate random gateway failures (10% chance)
-        if random.random() < 0.10:
+            raise TimeoutError(f"Gateway request exceeded timeout of {self.gateway_timeout}s")
+        
+        # Simulate occasional failures (10% failure rate)
+        if random.random() < 0.1:
             return False
         
         return True
@@ -87,7 +88,13 @@ class PaymentProcessor:
         logging.info("Checking database connection availability...")
 
         # Step 2: Call Gateway
-        success = self._call_external_gateway(payload)
+        try:
+            success = self._call_external_gateway(payload)
+        except Exception as e:
+            import traceback
+            err_msg = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+            log_error_to_dynatrace(err_msg, self.origin_id, app_name="payment-service")
+            return {"status": "FAILED", "txn_id": txn_id, "error": str(e)}
         
         if not success:
             self.failure_count += 1

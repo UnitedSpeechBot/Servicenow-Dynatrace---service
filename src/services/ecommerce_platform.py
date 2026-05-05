@@ -93,26 +93,25 @@ class EcommercePlatform:
     
     def process_order(self, user_id: str, items: List[Tuple[str, int]]) -> Tuple[bool, str, Optional[str]]:
         """Process an order."""
-        # Normalize items to ensure quantities are integers
-        normalized_items = []
-        for pid, qty in items:
-            try:
-                qty_int = int(qty)
-                normalized_items.append((pid, qty_int))
-            except (ValueError, TypeError) as e:
-                self.logger.error(f"Invalid quantity for product {pid}: {qty}")
-                return False, f"Invalid quantity for product {pid}", None
-        
         # Check stock for all items
-        for pid, qty in normalized_items:
+        for pid, qty in items:
+            # Convert qty to int if it's a string
+            try:
+                qty = int(qty)
+            except (ValueError, TypeError):
+                self.logger.error(f"Invalid quantity type for product {pid}: {type(qty)}")
+                return False, "Invalid quantity", None
+            
             if not self.check_stock(pid, qty):
                 self.logger.error(f"Insufficient stock for product {pid}")
                 return False, "Insufficient stock", None
         
         # Calculate total amount
         total_amount = 0.0
-        for pid, qty in normalized_items:
+        for pid, qty in items:
             product = self.db.get_product(pid)
+            # Ensure qty is an integer
+            qty = int(qty)
             total_amount += product["price"] * qty
         
         # Process payment
@@ -121,7 +120,8 @@ class EcommercePlatform:
             self.logger.error(f"Payment failed for user {user_id}")
             return False, "Payment failed", None
         
-        # Create order
+        # Create order with normalized items (ensure quantities are integers)
+        normalized_items = [(pid, int(qty)) for pid, qty in items]
         order_id = self.db.create_order(user_id, normalized_items)
         
         # Update stock
@@ -148,16 +148,18 @@ if __name__ == "__main__":
     # Create platform instance
     platform = EcommercePlatform()
     
-    # Process an order - Fixed to pass integer quantities
+    # Process an order - Fixed: Converting strings to ints
     try:
         success, message, order_id = platform.process_order(
-            "U001", [("P001", 1), ("P003", 2)]
+            "U001", [("P001", "1"), ("P003", "2")]
         )
         if success:
             print(f"Order {order_id} created: {message}")
+        else:
+            print(f"Order failed: {message}")
     except Exception as e:
         import traceback
-        err_msg = f"TypeError: {e}\n{traceback.format_exc()}"
+        err_msg = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
         print(f"❌ CRASHED: {err_msg}")
         # Report to mirror
         try:

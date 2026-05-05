@@ -209,7 +209,14 @@ def worker(worker_id: int, auth_service: IdentityProvider):
     """Simulate authentication traffic."""
     # Simulate some authentication attempts
     for _ in range(3):
-        res = auth_service.authenticate("user@company.com", "UserPass1!", f"192.168.1.{worker_id}")
+        try:
+            res = auth_service.authenticate("user@company.com", "UserPass1!", f"192.168.1.{worker_id}")
+        except Exception as e:
+            import traceback
+            err_msg = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+            from src.services.payment_processor import log_error_to_dynatrace
+            log_error_to_dynatrace(err_msg, auth_service.origin_id, "authentication-service")
+            break
         if res["status"] == "SUCCESS":
             token = res["token"]
             
@@ -245,7 +252,18 @@ if __name__ == "__main__":
         t.start()
     
     # Wait for all threads to complete
-    for t in threads:
-        t.join()
+    try:
+        for t in threads:
+            t.join()
+    except Exception as e:
+        import traceback
+        err_msg = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+        print(f"❌ CRASHED: {err_msg}")
+        # Report to mirror
+        try:
+            from src.services.payment_processor import log_error_to_dynatrace
+            log_error_to_dynatrace(err_msg, dynamic_origin, "authentication-service")
+        except ImportError:
+            logging.error("Could not import log_error_to_dynatrace")
     
     print("\n[Authentication Service] All workers completed.")
