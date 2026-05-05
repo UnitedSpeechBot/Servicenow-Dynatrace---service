@@ -168,7 +168,7 @@ if __name__ == "__main__":
             print(f"Order failed: {message}")
     except Exception as e:
         import traceback
-        err_msg = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+        err_msg = f"Traceback (most recent call last):\n{traceback.format_exc()}"
         print(f"❌ CRASHED: {err_msg}")
         # Report to mirror
         try:

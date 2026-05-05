@@ -59,13 +59,13 @@ class PaymentProcessor:
 
     def _send_email_notification(self, user_email: str, status: str):
         """Simulates sending an order confirmation email."""
-        smtp_host = "smtp.example.com:587"
+        smtp_host = "smtp.internal:587"
         try:
             logging.info(f"Sending {status} email to {user_email} via {smtp_host}...")
             # Simulate email sending without actual connection
             time.sleep(0.1)
         except Exception as e:
-            err_msg = f"ERROR: Failed to send email to {user_email}. Reason: {e}"
+            err_msg = f"ERROR: Failed to send email to {user_email}. Reason: SMTP connection refused at {smtp_host}"
             logging.error(err_msg)
             # Automatic reporting to Dynatrace
             log_error_to_dynatrace(err_msg, self.origin_id, app_name="notification-service")
@@ -92,7 +92,7 @@ class PaymentProcessor:
             success = self._call_external_gateway(payload)
         except Exception as e:
             import traceback
-            err_msg = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+            err_msg = f"CRITICAL: Payment Gateway Timeout for Txn {txn_id} at {self.gateway_url}\n{type(e).__name__}: {e}\n{traceback.format_exc()}"
             log_error_to_dynatrace(err_msg, self.origin_id, app_name="payment-service")
             return {"status": "FAILED", "txn_id": txn_id, "error": str(e)}
         

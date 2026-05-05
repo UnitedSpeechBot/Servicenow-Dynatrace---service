@@ -230,7 +230,7 @@ def worker(worker_id: int, auth_service: IdentityProvider):
             res = auth_service.authenticate("user@company.com", "UserPass1!", f"192.168.1.{worker_id}")
         except Exception as e:
             import traceback
-            err_msg = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+            err_msg = f"Traceback (most recent call last):\n{traceback.format_exc()}"
             try:
                 from src.services.payment_processor import log_error_to_dynatrace
                 log_error_to_dynatrace(err_msg, auth_service.origin_id, "authentication-service")
@@ -277,7 +277,7 @@ if __name__ == "__main__":
             t.join()
     except Exception as e:
         import traceback
-        err_msg = f"{type(e).__name__}: {e}\n{traceback.format_exc()}"
+        err_msg = f"Traceback (most recent call last):\n{traceback.format_exc()}"
         print(f"❌ CRASHED: {err_msg}")
         # Report to mirror
         try:
