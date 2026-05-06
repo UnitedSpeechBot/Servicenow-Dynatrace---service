@@ -10,8 +10,7 @@ from src.integrations.dynatrace.logger import log_error_to_dynatrace
 logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
 
 class PaymentProcessor:
-    """
-    A Production-grade Payment Processing Service.
+    """A Production-grade Payment Processing Service.
     Handles transaction orchestration, external gateway calls, and automated logging.
     """
 
