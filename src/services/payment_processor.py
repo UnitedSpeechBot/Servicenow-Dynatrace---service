@@ -44,9 +44,14 @@ class PaymentProcessor:
         smtp_host = "smtp.internal:587"
         try:
             logging.info(f"Sending {status} email to {user_email} via {smtp_host}...")
-            # Simulation of connection refusal
+            # Simulation of connection refusal - FIXED: Graceful error handling
             if "internal" in smtp_host:
                 raise ConnectionRefusedError(f"SMTP connection refused at {smtp_host}")
+        except ConnectionRefusedError as e:
+            err_msg = f"ERROR: Failed to send email to {user_email}. Reason: {e}"
+            logging.error(err_msg)
+            # Automatic reporting to Dynatrace
+            log_error_to_dynatrace(err_msg, self.origin_id, app_name="notification-service")
         except Exception as e:
             err_msg = f"ERROR: Failed to send email to {user_email}. Reason: {e}"
             logging.error(err_msg)
